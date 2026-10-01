@@ -18,6 +18,7 @@ const FLAG_SPRINT := 16
 const FLAG_VAULT := 32
 const FLAG_STUN := 64
 const FLAG_SLIDE := 128
+const FLAG_KICK := 256
 
 const GRAVITY := 20.0
 const RUNNER_CAMERA_DISTANCE := 3.0
@@ -59,6 +60,7 @@ var downed := false
 var injured := false
 var stun := 0.0
 var busy := 0.0  # seconds left in a vault or a barricade break
+var kicking := false  # Hunter winding up a kick at a knocked-over trash can
 var vaulting := false
 var boost := 0.0  # Runner speed boost after being hit
 
@@ -160,6 +162,7 @@ func set_role(r: Role) -> void:
 	last_vault = ""
 	dropped_barricade = -1
 	drop_lock = 0.0
+	kicking = false
 	_end_chase()
 	_on_busy_done = Callable()
 	_build_model()
@@ -299,6 +302,8 @@ func _pose() -> BodyModel.Pose:
 		return BodyModel.Pose.SLIDE if (sliding if local else _net_flags & FLAG_SLIDE != 0) else BodyModel.Pose.VAULT
 	if (stun > 0.0 if local else _net_flags & FLAG_STUN != 0):
 		return BodyModel.Pose.STUNNED
+	if (kicking if local else _net_flags & FLAG_KICK != 0):
+		return BodyModel.Pose.KICK
 	if crouching:
 		return BodyModel.Pose.CROUCH
 	return BodyModel.Pose.NORMAL
@@ -340,6 +345,8 @@ func _flags() -> int:
 		f |= FLAG_VAULT
 	if sliding:
 		f |= FLAG_SLIDE
+	if kicking:
+		f |= FLAG_KICK
 	if stun > 0.0:
 		f |= FLAG_STUN
 	return f
@@ -673,6 +680,7 @@ func apply_stun(duration: float) -> void:
 	reset_bloodlust()
 	if not vaulting:
 		busy = 0.0
+		kicking = false
 		_on_busy_done = Callable()
 
 

@@ -4,6 +4,7 @@ extends Node3D
 ## A limb hangs straight down at rotation 0; a positive X rotation swings it forward.
 
 const Greybox := preload("res://scripts/greybox.gd")
+const TUNING := preload("res://tuning.tres")
 
 const HIP_HEIGHT := 0.92
 const THIGH := 0.45
@@ -14,7 +15,7 @@ const UPPER_ARM := 0.3
 const FOREARM := 0.3
 
 ## Shown when `pose()` gets these.
-enum Pose { NORMAL, CROUCH, VAULT, SLIDE, STUNNED, DOWNED }
+enum Pose { NORMAL, CROUCH, VAULT, SLIDE, STUNNED, DOWNED, KICK }
 
 var hips: Node3D
 var torso: Node3D
@@ -30,6 +31,8 @@ var _parts := {}  # name -> Array of meshes, for recoloring
 var _phase := 0.0
 var _last_pos := Vector3.ZERO
 var _speed := 0.0
+var _pose := Pose.NORMAL
+var _pose_time := 0.0  # seconds in the current pose
 
 
 ## Builds the person from an outfit, a Dictionary of colors and options:
@@ -161,6 +164,11 @@ func animate(delta: float, pose: Pose) -> void:
 	var elbow_x := [lerpf(0.2, 1.3, run) + 0.1, lerpf(0.2, 1.3, run) + 0.1]
 	var arm_z := [-0.08, 0.08]
 
+	if pose != _pose:
+		_pose = pose
+		_pose_time = 0.0
+	_pose_time += delta
+	var sway := 0.0
 	match pose:
 		Pose.CROUCH:
 			var a := 0.25 * moving
@@ -189,13 +197,32 @@ func animate(delta: float, pose: Pose) -> void:
 			arm_x = [0.4, -0.5]
 			elbow_x = [0.5, 0.5]
 		Pose.STUNNED:
-			torso_x = 0.25
-			head_x = 0.3
-			leg_x = [0.2, -0.1]
-			knee_x = [-0.2, -0.2]
-			arm_x = [2.6, 2.6]
+			# Staggering: reeling back, swaying, hands flailing at the head.
+			var f := sin(_pose_time * 14.0)
+			torso_x = 0.35
+			head_x = 0.4 + f * 0.15
+			leg_x = [0.25, -0.15]
+			knee_x = [-0.3, -0.2]
+			arm_x = [2.5 + f * 0.4, 2.5 - f * 0.4]
 			elbow_x = [1.6, 1.6]
-			arm_z = [-0.4, 0.4]
+			arm_z = [-0.5, 0.5]
+			sway = sin(_pose_time * 7.0) * 0.18
+		Pose.KICK:
+			# A slow wind-up (right leg drawn back, leaning in) the Runner can see coming,
+			# then the kick itself at the very end.
+			var kick_at: float = TUNING.hunter_break_time - 0.3
+			var wind := clampf(_pose_time / kick_at, 0.0, 1.0)
+			torso_x = -0.15 - 0.2 * wind
+			head_x = 0.2
+			arm_x = [-0.5 * wind, 0.6 * wind]
+			arm_z = [-0.5 * wind, 0.5 * wind]
+			elbow_x = [0.4, 0.4]
+			leg_x = [0.1, -1.0 * wind]
+			knee_x = [-0.2, -1.4 * wind]
+			if _pose_time >= kick_at:
+				torso_x = 0.25
+				leg_x = [0.1, 1.6]
+				knee_x = [-0.2, 0.0]
 		Pose.DOWNED:
 			# Lying on the ground face down, crawling.
 			var c := sin(_phase) * 0.4 * moving
@@ -215,6 +242,7 @@ func animate(delta: float, pose: Pose) -> void:
 	elif pose == Pose.SLIDE:
 		lean = 0.8  # tipped back
 	rotation.x = lerp_angle(rotation.x, lean, w)
+	rotation.z = lerp_angle(rotation.z, sway, w)
 	hips.position.y = lerpf(hips.position.y, hip_y, w)
 	hips.position.z = lerpf(hips.position.z, 0.13 if downed else 0.0, w)  # lying down, local +Z is up
 	torso.rotation.x = lerp_angle(torso.rotation.x, torso_x, w)

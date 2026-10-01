@@ -147,7 +147,7 @@ func _process(delta: float) -> void:
 		if me.stun > 0.0:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting and me.role == Role.HUNTER:
-			_prompt.text = "Breaking..."
+			_prompt.text = "Kicking..."
 		elif me.role == Role.HUNTER and me.cooldown > 0.0:
 			_prompt.text = "Recovering from your swing..."
 		else:
