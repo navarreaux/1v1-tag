@@ -23,7 +23,7 @@ plays the other side. Each round shows your time; press **Enter** to play anothe
 (you keep the same role) or **Esc** for the menu.
 
 - The bot Hunter chases you, swings when close, vaults windows and breaks barricades in its way.
-- The bot Runner runs for the far side of walls, vaults windows, and drops barricades on you.
+- The bot Runner loops windows and barricades, fast vaults, and drops barricades on you.
 
 ### Play both sides on one PC
 1. In Godot's top menu choose **Debug → Customize Run Instances...**
@@ -41,21 +41,37 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 
 | Key | What it does |
 | --- | --- |
-| W A S D | Move |
+| W A S D | Move (the Runner walks unless sprinting) |
+| Shift (hold) | Sprint (Runner) |
+| Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
-| E or Space | Drop a barricade, vault a window or barricade, break a barricade |
-| Left click | Swing (Hunter only) |
+| Space or E | Drop a barricade, vault a window or barricade, break a barricade |
+| Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
 | Esc | Pause menu (the match keeps going) |
-| Enter | Rematch (host, after a match) |
+| Enter | Rematch / play again |
 
 ## Rules in this prototype
 
-- The Runner is blue and seen from behind (third person). The Hunter is red and sees through their own eyes (first person).
-- The Hunter is a bit faster (4.6 m/s vs 4.0 m/s), so the Runner has to use walls, windows and barricades.
-- Two hits take the Runner down: Healthy → Injured → Downed. Getting hit gives the Runner a short speed burst.
-- A barricade dropped on the Hunter stuns them. The Hunter can break dropped barricades; the Runner can vault them.
-- Both players can vault windows, but the Hunter is much slower at it.
-- A round ends when the Runner is downed, or after 5 minutes.
+The chase copies Dead by Daylight's mechanics as closely as we can (not its art, names or perks).
+
+**Runner**
+- Third person, with the camera over the right shoulder. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
+- Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
+- **Vaults** come in three speeds. Sprinting straight at a window for a moment gives a **fast** vault. Sprinting without enough run-up or at an angle gives a **medium** one. Walking or standing gives a **slow** one.
+- Fast vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls.
+- Vault the same window 3 times and it gets **blocked** (red) for 15 seconds.
+- Drop a **barricade** to block a gap. Dropping it on the Hunter **stuns** them.
+- Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.
+- A **heartbeat** plays when the Hunter is within 32 m and gets faster and louder as they come closer.
+
+**Hunter**
+- First person, 4.6 m/s (115% of the Runner's sprint). Casts a **red stain** on the ground in front of them that the Runner can see.
+- **Lunge**: click to swing with a short lunge, or hold to lunge further. Hits within about 2.2 m.
+- After a hit the Hunter **wipes** the blade (2.7 s, slowed). After a miss they **recover** (1.5 s, slowed).
+- **Bloodlust**: after 15, 25 and 35 seconds of continuous chase the Hunter gets faster (+0.2, +0.4, +0.6 m/s). It resets on a hit, a stun, breaking a barricade, or losing the Runner for 8 seconds.
+- Vaults windows slowly (1.7 s). Can't vault barricades; breaks them instead (2.6 s).
+
+A round ends when the Runner is downed, or after 5 minutes.
 
 All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSystem panel to change them.
 
@@ -69,6 +85,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/arena.gd` | Builds the greybox map |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
 | `scripts/bot.gd` | The computer opponent |
+| `scripts/effects.gd` | Scratch marks, blood, noise alerts, heartbeat |
 | `scripts/hud.gd` | On-screen text and the pause menu |
 | `scripts/net.gd` | Hosting and joining (Godot's built-in ENet networking) |
 | `scripts/tuning.gd` | The list of tunable numbers |
