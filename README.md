@@ -46,6 +46,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
 | Space | Knock over a trash can, vault a window, vault a knocked-over trash can (hold Shift to vault fast), kick a trash can away |
+| B (Tile Test) | Bring a bot in at the nearest tile, or send it away |
 | F5 (vs bot) | Dev: stand every trash can back up and unblock every window |
 | F6 (vs bot) | Dev: freeze or unfreeze the bot in place |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
@@ -62,9 +63,11 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 
 **The Last Stop** is a compact 80 x 80 m abandoned roadside service station: a 5 x 5 grid of 16 m cells, plus one sticking out on the right. The **service station** fills the middle-top four cells: a fenced forecourt with entrances on the west and south, a pump island under a canopy, a shop with a trash can between it and the fence, and one window in the east fence. Strong long walls sit on opposite edges (B and V), short walls at D, N and T, a shack at F and a trash can loop at R. The rest is filler with weak trash cans, container scrap yards that break sight lines, low drainage curbs in the corners and open escape lanes. The Runner starts inside the station; the Hunter starts in the open lane to the west.
 
+**Tile Test** puts every tile from both maps in one long row, once each, with its name floating above it, so tiles can be compared side by side when designing random tile spawning. Tiles are 24 m apart, so a chase at one stays there. You start alone in whichever role you picked, with no time limit. Press **B** to bring a bot in at the tile you're nearest (the HUD names it), and B again to send it away; walk to another tile and press B to try that one. The Runner can't be downed here: every hit counts (speed burst and all) but leaves them injured, never down. F5 still resets windows and trash cans.
+
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
-**Changing direction costs speed**, as in Dead by Daylight. Swing your movement keys from forward to back, or left to right, and you drop to 30% speed (40% for the Hunter), then build back up over about half a second. Anything up to a quarter turn is free: rolling from W through W+A to A (or snapping straight from W to A) keeps all your speed. Turning the camera is free. So spamming left and right is slow, and moving with intent is fast.
+**Changing direction costs speed**, as in Dead by Daylight. Swing your movement keys from forward to back, or left to right, and you drop to 30% speed (40% for the Hunter), then build back up over about half a second. Anything up to a quarter turn is free: rolling from W through W+A to A (or snapping straight from W to A) keeps all your speed. For the Runner, turning partway back (W to S+A) costs only a little; it's the straight reversals (A to D to A) that are harsh. Turning the camera is free. So spamming left and right is slow, and moving with intent is fast.
 
 **Runner**
 - Third person, with the camera behind and over the right shoulder so the Runner sits left of center, and an 87° horizontal field of view, like Dead by Daylight. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
@@ -75,7 +78,7 @@ Both players can **slide along walls** at full speed: if you run into a wall at 
 - **Trash cans**: hurdle a knocked-over can fast (0.6 s) if you hold Shift while pressing Space, slow (2.2 s) if you don't.
 - Fast and medium vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls. Slow vaults are silent.
 - Vault the same window 3 times and it gets **blocked** (red) for 30 seconds. If 30 seconds pass between two of those vaults, the count starts over.
-- A standing **trash can** sits in the middle of a 3 m gap, with room to run past it on either side. Knock it over to block the gap: it falls and leans at 45° against the structure on the other side. Knocking it onto the Hunter **stuns** them (they stagger, so you can see it). It takes a moment: you stand still for 0.35 s, and you can't vault that can for 1 s after.
+- A standing **trash can** stands up against one side of a 3 m gap, leaving the rest open. Knock it over to block the gap: it tips across and leans at 45° against the structure on the other side. Knocking it onto the Hunter **stuns** them (they stagger, so you can see it). It takes a moment: you stand still for 0.35 s, and you can't vault that can for 1 s after.
 - Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.
 - A **heartbeat** plays when the Hunter is within 32 m and gets faster and louder as they come closer.
 

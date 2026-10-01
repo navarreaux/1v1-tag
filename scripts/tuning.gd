@@ -25,6 +25,11 @@ extends Resource
 ## (forward to forward-left to left) keep all your speed.
 @export var runner_turn_slowdown := 0.7
 @export var hunter_turn_slowdown := 0.6
+## How much of that a partial reversal costs. 1 = in proportion to how far back you turn;
+## higher = only a near-full reversal (A to D to A) is harsh, and a turn back over your
+## shoulder (W to S+A) costs only a little.
+@export var runner_turn_curve := 3.0
+@export var hunter_turn_curve := 1.0
 ## Never slower than this fraction of full speed from turning.
 @export var turn_min_speed := 0.3
 ## Seconds to get from a standstill back to full speed after the slowdown.

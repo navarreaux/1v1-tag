@@ -16,8 +16,8 @@ extends Node3D
 ##
 ## Every player builds the same map from this code, so nothing about it is sent over the network.
 
-enum Map { ROTTEN_FIELDS, LAST_STOP }
-const MAP_NAMES := ["Rotten Fields", "The Last Stop"]
+enum Map { ROTTEN_FIELDS, LAST_STOP, TILE_TEST }
+const MAP_NAMES := ["Rotten Fields", "The Last Stop", "Tile Test"]
 
 const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
@@ -121,6 +121,8 @@ func _ready() -> void:
 	add_child(_nav)
 	if map_id == Map.LAST_STOP:
 		_build_last_stop()
+	elif map_id == Map.TILE_TEST:
+		_build_tile_test()
 	else:
 		_build_rotten_fields()
 	_bake_navigation()
@@ -160,6 +162,85 @@ func _outline(outline: Array, center: Vector3, floor_size: Vector2) -> void:
 		var mid := (a + b) / 2.0 + out * 0.5
 		var xf := Transform3D(Basis(Vector3.UP, -along.angle()), Vector3(mid.x, 1.5, mid.y))
 		Greybox.box(_nav, xf, Vector3(a.distance_to(b) + 1.0, 3, 1), WALL_COLOR)
+
+
+# --- Tile Test -------------------------------------------------------------
+
+## Every tile either map can build, once each, in a row from west to east, with its name floating
+## above it. For looking at tiles side by side and planning random tile spawning.
+## [label, width along the row in m]. The builders are matched by label in _build_tile_test.
+const TEST_TILES := [["T Wall", 16], ["L Window", 13], ["L Trash Can", 13], ["Jungle Gym", 13],
+	["Shack", 14], ["Long Wall", 16], ["Trash Can Loop", 16], ["Bent Wall", 18], ["L Pair", 14],
+	["Train Loop", 28], ["Short Wall", 11], ["Filler Trash Can", 11], ["Container", 7],
+	["Scrap Yard", 12], ["Drainage", 10], ["Lamp", 4], ["Depot", 20], ["Service Station", 32]]
+## Space between neighbouring tiles: wide enough that a chase at one tile stays there.
+const TEST_GAP := 24.0
+## Tile Test: [label, x] of each tile's middle, west to east.
+var test_tiles := []
+
+
+func _build_tile_test() -> void:
+	var length := 0.0
+	for t in TEST_TILES:
+		length += t[1] + TEST_GAP
+	length += TEST_GAP
+	var x := -length / 2.0 + TEST_GAP
+	_outline([Vector2(-length / 2.0, -30), Vector2(length / 2.0, -30), Vector2(length / 2.0, 30),
+		Vector2(-length / 2.0, 30)], Vector3.ZERO, Vector2(length + 2, 62))
+	runner_spawn = Vector3(x + 8, 0, 14)
+	runner_spawn_yaw = -PI / 2.0  # facing along the row
+	hunter_spawn = Vector3(x - 2, 0, 24)
+	hunter_spawn_yaw = -PI / 2.0
+	for t in TEST_TILES:
+		var name: String = t[0]
+		var w: float = t[1]
+		var xf := _at(x + w / 2.0, 0, 0)
+		match name:
+			"T Wall": _t_wall(xf)
+			"L Window": _l_window(xf)
+			"L Trash Can": _l_barricade(xf)
+			"Jungle Gym": _jungle_gym(xf)
+			"Shack": _shack(xf)
+			"Long Wall": _long_wall(xf)
+			"Trash Can Loop": _barricade_loop(xf)
+			"Bent Wall": _bent_wall(xf)
+			"L Pair": _l_pair(xf)
+			"Train Loop": _train_loop(_at(x + 11.5, 0, 0))  # the car is off-centre in its tile
+			"Short Wall": _short_wall(xf)
+			"Filler Trash Can": _rock_pallet(xf)
+			"Container": _rock(xf.origin)
+			"Scrap Yard": _scrap_yard(xf)
+			"Drainage": _drainage(xf)
+			"Lamp": _lamp(xf.origin)
+			"Depot": _depot(xf)
+			"Service Station": _service_station(xf)
+		_label(name, Vector3(x + w / 2.0, 7.0, -20.0))
+		test_tiles.append([name, x + w / 2.0])
+		x += w + TEST_GAP
+
+
+## Tile Test: index of the tile nearest `pos` (by distance along the row).
+func nearest_test_tile(pos: Vector3) -> int:
+	var best := 0
+	for i in test_tiles.size():
+		if absf(test_tiles[i][1] - pos.x) < absf(test_tiles[best][1] - pos.x):
+			best = i
+	return best
+
+
+## A big floating name that always faces the camera.
+func _label(text: String, pos: Vector3) -> void:
+	var l := Label3D.new()
+	l.text = text
+	l.position = pos
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.pixel_size = 0.02
+	l.font_size = 96
+	l.outline_size = 24
+	l.modulate = Color.WHITE
+	l.outline_modulate = Color(0.1, 0.1, 0.15)
+	l.no_depth_test = true
+	add_child(l)
 
 
 # --- The Last Stop ---------------------------------------------------------

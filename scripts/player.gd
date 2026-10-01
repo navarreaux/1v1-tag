@@ -409,6 +409,7 @@ func _move(delta: float) -> void:
 ## The direction is the keys' own (relative to where you face), so turning the camera is free.
 func _update_momentum(input: Vector2, delta: float) -> void:
 	var slowdown: float = TUNING.hunter_turn_slowdown if role == Role.HUNTER else TUNING.runner_turn_slowdown
+	var curve: float = TUNING.hunter_turn_curve if role == Role.HUNTER else TUNING.runner_turn_curve
 	if input.length() > 0.1:
 		var now := input.normalized()
 		if _last_input == Vector2.ZERO:
@@ -419,7 +420,7 @@ func _update_momentum(input: Vector2, delta: float) -> void:
 		# counts as a reversal. Clamped, since rounding can push the dot product past 1.
 		if now.dot(_last_keys) < 0.99:  # charged once, when the keys change
 			var change := clampf(-now.dot(_last_input), 0.0, 1.0)
-			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * change))
+			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * pow(change, curve)))
 		_last_keys = now
 		var turned := _last_input.lerp(now, minf(1.0, delta / TUNING.turn_follow_time))
 		_last_input = turned.normalized() if turned.length() > 0.05 else now
