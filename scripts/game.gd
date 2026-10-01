@@ -26,6 +26,7 @@ const BOT_ID := 2
 
 ## Playing alone against a bot. You keep the role you picked every round.
 var vs_bot := false
+var bot_frozen := false  # dev key F6: the bot stands still and does nothing
 var human_role := Role.RUNNER
 var closing := false
 var phase := Phase.LOBBY
@@ -145,6 +146,23 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("rematch") and phase == Phase.MATCH_OVER and multiplayer.is_server():
 		_begin_round(1 if not vs_bot else round_num + 1)
+	# Dev keys for practicing against the bot: F5 resets every window and trash can,
+	# F6 freezes or unfreezes the bot in place.
+	if vs_bot and event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_F5:
+				_dev_reset_map()
+			KEY_F6:
+				bot_frozen = not bot_frozen
+				hud.flash("Bot frozen" if bot_frozen else "Bot unfrozen")
+
+
+func _dev_reset_map() -> void:
+	arena.reset()
+	for p in players.values():
+		p.dropped_barricade = -1
+		p.last_vault = ""
+	hud.flash("Windows and trash cans reset")
 
 
 # --- Helpers used by players and the HUD ---------------------------------
@@ -177,12 +195,12 @@ func find_interaction(p: Node) -> Dictionary:
 		var d := _flat_distance(p.global_position, b.global_position)
 		var option := {}
 		if p.role == Role.RUNNER and b.state == Barricade.State.UP and d < 1.7:
-			option = {"kind": "drop", "index": i, "text": "Drop barricade"}
+			option = {"kind": "drop", "index": i, "text": "Knock over trash can"}
 		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5 \
 				and not (i == p.dropped_barricade and p.drop_lock > 0.0):
-			option = {"kind": "vault_barricade", "index": i, "text": "Vault barricade"}
+			option = {"kind": "vault_barricade", "index": i, "text": "Slide over trash can"}
 		elif p.role == Role.HUNTER and b.state == Barricade.State.DOWN and d < 1.8:
-			option = {"kind": "break", "index": i, "text": "Break barricade"}
+			option = {"kind": "break", "index": i, "text": "Kick trash can away"}
 		if not option.is_empty() and d < best_dist:
 			best = option
 			best_dist = d
@@ -221,7 +239,10 @@ func do_interact(p: Node) -> void:
 
 
 func start_break(p: Node, i: int) -> void:
+	# The Hunter winds up a kick (so the Runner can see it coming), then boots the can away.
+	p.kicking = true
 	p.start_busy(TUNING.hunter_break_time, func():
+		p.kicking = false
 		p.reset_bloodlust()
 		request_break.rpc_id(1, i))
 
@@ -379,7 +400,11 @@ func _set_runner_health(health: int) -> void:
 @rpc("authority", "call_local", "reliable")
 func _set_barricade(index: int, state: Barricade.State) -> void:
 	var b = arena.barricades[index]
-	b.set_state(state)
+	var hunter = players.get(hunter_id)
+	if state == Barricade.State.BROKEN and hunter:
+		b.kick_away(hunter.global_position)
+	else:
+		b.set_state(state)
 	if state == Barricade.State.DOWN:
 		for p in players.values():
 			if p.is_local() and b.in_zone(p.global_position):

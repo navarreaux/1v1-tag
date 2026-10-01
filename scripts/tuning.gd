@@ -18,22 +18,36 @@ extends Resource
 ## Both the Runner and the Hunter get this.
 @export var wall_slide_max_angle := 45.0
 
+@export_group("Changing direction")
+## Like Dead by Daylight, swinging the movement keys to a new direction costs speed, so
+## spamming left/right is slow and movement has to be deliberate. A full reversal (forward to
+## back, left to right) drops you to (1 - this) of your speed; a quarter turn (forward to left)
+## costs about a third of that; small adjustments almost nothing.
+@export var runner_turn_slowdown := 0.7
+@export var hunter_turn_slowdown := 0.6
+## Never slower than this fraction of full speed from turning.
+@export var turn_min_speed := 0.3
+## Seconds to get from a standstill back to full speed after the slowdown.
+@export var turn_recover_time := 0.8
+## Let go of the keys for this long (seconds) and the next direction is free.
+@export var turn_memory := 0.2
+
 @export_group("Runner vaults")
-## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast vault needs
-## a sprinting run-up of this many meters straight at a window. A fast vault keeps your momentum,
-## so you can chain another; a medium or slow vault resets it, so you need a fresh run-up.
-@export var fast_vault_runup_meters := 2.5
+## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast window vault
+## needs you to have been sprinting at the window, from straight on up to the angle below, for
+## at least this many seconds. Sprinting at it without that gives a medium vault; walking, slow.
+@export var fast_vault_sprint_time := 0.75
 ## How far off straight-on (in degrees) you can be and still fast vault.
-@export var fast_vault_max_angle := 40.0
+@export var fast_vault_max_angle := 45.0
 @export var window_vault_fast := 0.5
 @export var window_vault_medium := 0.9
 @export var window_vault_slow := 1.5
-## Barricades only have two speeds: sprinting into one is fast, walking is slow.
+## Barricades only have two speeds: holding Shift while pressing Space slides over fast,
+## otherwise it's slow.
 @export var barricade_vault_fast := 1.1
 @export var barricade_vault_slow := 2.0
-## Vaulting the same window or barricade you just vaulted needs this much more run-up
-## (1.5 = 50% more) to be fast. Otherwise it's a medium (window) or slow (barricade) vault.
-@export var revault_runup_mult := 1.5
+## Fast vaulting the window you just vaulted needs this much longer a sprint (1.5 = 50% more).
+@export var revault_sprint_mult := 1.5
 ## After dropping a barricade the Runner is stuck in place this long (seconds)...
 @export var drop_pause := 0.35
 ## ...and can't vault that barricade until this long after the drop.
@@ -43,6 +57,8 @@ extends Resource
 ## After the Runner vaults the same window this many times in a chase, it gets blocked for them.
 @export var window_block_vaults := 3
 @export var window_block_time := 30.0
+## If this many seconds pass between two vaults of a window, its vault count starts over.
+@export var window_block_reset_time := 30.0
 
 @export_group("Hunter")
 ## 4.6 is 115% of the Runner's sprint.
