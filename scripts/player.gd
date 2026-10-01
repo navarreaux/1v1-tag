@@ -25,16 +25,24 @@ const MOUSE_SENSITIVITY := 0.0025
 const RADIUS := 0.35
 const HEIGHT := 1.8
 const CROUCH_HEIGHT := 1.1
-const HUNTER_COLOR := Color(0.55, 0.12, 0.1)
-const HUNTER_PANTS := Color(0.13, 0.1, 0.1)
-const HUNTER_MASK := Color(0.88, 0.86, 0.8)
 const HUNTER_SCALE := 1.12
-const RUNNER_COLOR := Color(0.25, 0.5, 0.9)
-const RUNNER_PANTS := Color(0.22, 0.24, 0.32)
-const RUNNER_SKIN := Color(0.85, 0.68, 0.55)
-const INJURED_COLOR := Color(0.45, 0.3, 0.6)
-const ARM_COLOR := Color(0.25, 0.1, 0.08)
-const BLADE_COLOR := Color(0.7, 0.7, 0.72)
+## Bright, cartoony outfits: the Runner is a teen in street clothes, the Hunter a police officer.
+const RUNNER_OUTFIT := {
+	"skin": Color(0.96, 0.76, 0.6), "top": Color(1.0, 0.55, 0.1), "bottom": Color(0.2, 0.4, 0.78),
+	"sleeve": Color(1.0, 0.55, 0.1), "hood": true, "shoes": Color(0.95, 0.95, 0.95),
+	"shoe_trim": Color(0.9, 0.15, 0.15), "hair": Color(0.5, 0.3, 0.15), "hat": "cap_back",
+	"hat_color": Color(0.1, 0.75, 0.8), "backpack": Color(0.6, 0.25, 0.8),
+}
+const HUNTER_OUTFIT := {
+	"skin": Color(0.9, 0.68, 0.52), "top": Color(0.15, 0.25, 0.55), "bottom": Color(0.08, 0.12, 0.3),
+	"shoes": Color(0.06, 0.06, 0.07), "belt": Color(0.06, 0.06, 0.07), "badge": true, "shades": true,
+	"hat": "police", "hat_color": Color(0.1, 0.16, 0.38),
+}
+const RUNNER_COLOR := Color(1.0, 0.55, 0.1)
+const INJURED_COLOR := Color(0.85, 0.2, 0.25)  # the hoodie turns red when hurt
+const SLEEVE_COLOR := Color(0.15, 0.25, 0.55)
+const SKIN_COLOR := Color(0.9, 0.68, 0.52)
+const BATON_COLOR := Color(0.08, 0.08, 0.09)
 
 var game: Node  # set by game.gd before this is added
 ## Bots are run by the computer that owns them, like a human player, but get no camera.
@@ -61,7 +69,7 @@ var run_up := 0.0  # meters sprinted at full speed (for fast vaults)
 ## Hunter attack state.
 var lunge_time := -1.0  # seconds into the current lunge, or -1 when not lunging
 var cooldown := 0.0  # Hunter is slowed after a swing
-var wiping := false  # the cooldown came from a hit (wipe the blade) rather than a miss
+var wiping := false  # the cooldown came from a hit (the longer one) rather than a miss
 
 ## Hunter chase state (only tracked on the Hunter's own computer).
 var in_chase := false
@@ -161,17 +169,17 @@ func spawn_at(pos: Vector3, facing: float) -> void:
 	_net_yaw = facing
 
 
-## A low-poly person. Hunters are bigger, and their right arm is the weapon arm (see _build_arm).
+## A cartoony person. Hunters are bigger, and their right arm is the weapon arm (see _build_arm).
 func _build_model() -> void:
 	if _model:
 		_model.queue_free()
 	_model = BodyModel.new()
 	add_child(_model)
 	if role == Role.HUNTER:
-		_model.build(ARM_COLOR, HUNTER_COLOR, HUNTER_PANTS, false, HUNTER_MASK)
+		_model.build(HUNTER_OUTFIT, false)
 		_model.scale = Vector3.ONE * HUNTER_SCALE
 	else:
-		_model.build(RUNNER_SKIN, RUNNER_COLOR, RUNNER_PANTS)
+		_model.build(RUNNER_OUTFIT)
 	# Hunters are first person, so you don't see your own body (its shadow still shows).
 	if role == Role.HUNTER and is_human_local():
 		for m in _model.find_children("*", "MeshInstance3D", true, false):
@@ -184,7 +192,7 @@ func _update_color() -> void:
 		_model.set_top_color(INJURED_COLOR if injured else RUNNER_COLOR)
 
 
-## The Hunter's arm with a blade. It's a pivot at the shoulder; poses rotate it.
+## The Hunter's arm swinging a police baton. It's a pivot at the shoulder; poses rotate it.
 func _build_arm() -> void:
 	if _arm:
 		_arm.queue_free()
@@ -192,8 +200,19 @@ func _build_arm() -> void:
 	if role != Role.HUNTER:
 		return
 	_arm = Node3D.new()
-	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.3)), Vector3(0.1, 0.1, 0.6), ARM_COLOR, false)
-	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0.02, -0.75)), Vector3(0.03, 0.14, 0.4), BLADE_COLOR, false)
+	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.1)), Vector3(0.13, 0.13, 0.2), SLEEVE_COLOR, false)
+	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.34)), Vector3(0.11, 0.11, 0.3), SKIN_COLOR, false)
+	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.53)), Vector3(0.12, 0.12, 0.11), SKIN_COLOR, false)
+	var baton := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.035
+	cyl.bottom_radius = 0.035
+	cyl.height = 0.7
+	cyl.radial_segments = 8
+	baton.mesh = cyl
+	baton.material_override = Greybox.material(BATON_COLOR)
+	baton.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(0, 0, -0.8))
+	_arm.add_child(baton)
 	if _camera:
 		_camera.add_child(_arm)
 		_arm.position = Vector3(0.24, -0.19, -0.15)
@@ -485,7 +504,7 @@ func _animate_arm(delta: float) -> void:
 			target = Vector2(lerpf(1.8, -0.6, k), lerpf(0.3, -0.5, k))
 		speed = 30.0
 	elif wipe:
-		target = Vector2(-0.9, -0.7) if fp else Vector2(-0.4, -1.0)  # wiping the blade
+		target = Vector2(-0.9, -0.7) if fp else Vector2(-0.4, -1.0)  # tapping the baton after a hit
 		speed = 6.0
 	elif recover:
 		target = Vector2(-1.0, 0.0) if fp else Vector2(-1.5, -0.2)  # swung through and drooping

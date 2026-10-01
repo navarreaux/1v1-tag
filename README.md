@@ -4,7 +4,7 @@ A standalone take on the fan-made 1v1 chase mode: one **Hunter** chases one **Ru
 Each match is two rounds and the players swap roles after the first one. Whoever survives
 longer as the Runner wins.
 
-This is an early **prototype**: grey boxes and blocky low-poly people, no perks, no objectives. It exists
+This is an early **prototype** with a bright, cartoony subway-yard look (a teen Runner in street clothes, a police-officer Hunter with a baton), no perks, no objectives. It exists
 to find out whether the chase is fun.
 
 ## How to play it
@@ -54,7 +54,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 
 The chase copies Dead by Daylight's mechanics as closely as we can (not its art, names or perks).
 
-**The map** is 80 x 80 m, laid out like a Dead by Daylight map. Both players start at the **main building** in the middle (the Runner inside, the Hunter 20 m away). It has three windows, including a "god window" in its middle wall, and a barricade in its east door. Each corner has a **zone** of four tiles close together: T walls, L walls (with a window or a barricade), jungle gyms, shacks, long walls and barricade walls. Between the zones is sparse **filler**: rocks, trees and rock barricades.
+**The map** is 80 x 80 m, laid out like a Dead by Daylight map. Both players start at the **main building** in the middle (the Runner inside, the Hunter 20 m away). It has three windows, including a "god window" in its middle wall, and a barricade in its east door. Each corner has a **zone** of four tiles close together: T walls, L walls (with a window or a barricade), jungle gyms, shacks, long walls and barricade walls. Between the zones is sparse **filler**: crate stacks, street lamps and crate barricades, with parked trains along the edges.
 
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
@@ -88,7 +88,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/main.gd` | Main menu (bot match, host, join) |
 | `scripts/game.gd` | Rounds, hits, barricades and who wins; the host decides these |
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
-| `scripts/body_model.gd` | The low-poly people and their walk, run, crouch, vault and downed animations |
+| `scripts/body_model.gd` | The cartoony people (outfits, hats, the Runner's backpack) and their walk, run, crouch, vault and downed animations |
 | `scripts/arena.gd` | Builds the 80 x 80 m greybox map: main building, four tile zones, filler |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
 | `scripts/bot.gd` | The computer opponent |

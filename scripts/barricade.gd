@@ -8,7 +8,8 @@ const Greybox := preload("res://scripts/greybox.gd")
 enum State { UP, DOWN, BROKEN }
 
 const GAP_WIDTH := 2.0
-const COLOR := Color(0.78, 0.6, 0.3)
+const COLOR := Color(1.0, 0.8, 0.1)
+const STRIPE_COLOR := Color(0.08, 0.08, 0.08)
 
 var state := State.UP
 var _upright: Node3D
@@ -18,6 +19,11 @@ var _dropped: Node3D
 func _ready() -> void:
 	_upright = Greybox.box(self, Transform3D(Basis(), Vector3(0.9, 0.9, 0)), Vector3(0.12, 1.8, 1.1), COLOR)
 	_dropped = Greybox.box(self, Transform3D(Basis(), Vector3(0, 0.45, 0)), Vector3(GAP_WIDTH, 0.9, 0.35), COLOR)
+	# Black hazard stripes, like a construction barrier.
+	for y in [-0.6, 0.0, 0.6]:
+		Greybox.box(_upright, Transform3D(Basis(), Vector3(0, y, 0)), Vector3(0.14, 0.2, 1.12), STRIPE_COLOR, false)
+	for x in [-0.65, 0.0, 0.65]:
+		Greybox.box(_dropped, Transform3D(Basis(), Vector3(x, 0, 0)), Vector3(0.2, 0.92, 0.37), STRIPE_COLOR, false)
 	set_state(State.UP)
 
 

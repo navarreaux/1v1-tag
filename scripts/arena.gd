@@ -1,8 +1,8 @@
 extends Node3D
-## The greybox map: an 80 x 80 m walled field laid out like a Dead by Daylight map.
+## The map: an 80 x 80 m sunny subway yard laid out like a Dead by Daylight map.
 ## A strong main building sits in the middle, where both players start. Four zones of dense
 ## tiles (T walls, L walls, jungle gyms, shacks) sit in the corners, joined by sparse filler:
-## rocks, trees and rock barricades.
+## crate stacks, lamp posts, crate barricades, and parked trains along the edges.
 ## Every player builds the same map from this code, so nothing about it is sent over the network.
 
 const Greybox := preload("res://scripts/greybox.gd")
@@ -16,12 +16,18 @@ const WINDOW_W := 1.4
 const SILL_H := 0.9
 const LINTEL_Y := 2.0
 
-const FLOOR_COLOR := Color(0.25, 0.32, 0.22)
-const WALL_COLOR := Color(0.5, 0.5, 0.48)
-const MAIN_COLOR := Color(0.55, 0.47, 0.4)
-const WINDOW_COLOR := Color(0.45, 0.55, 0.7)
-const ROCK_COLOR := Color(0.48, 0.45, 0.42)
-const TREE_COLOR := Color(0.3, 0.22, 0.15)
+const FLOOR_COLOR := Color(0.4, 0.36, 0.32)  # gravel
+const WALL_COLOR := Color(0.82, 0.8, 0.76)  # concrete
+const MAIN_COLOR := Color(0.75, 0.32, 0.22)  # red brick station
+const WINDOW_COLOR := Color(0.2, 0.5, 0.95)
+const ROCK_COLOR := Color(0.75, 0.5, 0.25)  # wooden crates
+const POLE_COLOR := Color(0.45, 0.47, 0.5)
+const LAMP_COLOR := Color(1.0, 0.9, 0.4)
+const RAIL_COLOR := Color(0.55, 0.55, 0.6)
+const SLEEPER_COLOR := Color(0.38, 0.27, 0.18)
+## Bright spray-paint colors for graffiti and crates.
+const PAINT := [Color(1.0, 0.25, 0.6), Color(0.1, 0.85, 0.95), Color(0.5, 0.95, 0.2), Color(1.0, 0.85, 0.1),
+	Color(0.6, 0.3, 1.0), Color(1.0, 0.5, 0.1), Color(0.2, 0.45, 1.0)]
 
 ## The Runner starts inside the main building; the Hunter starts outside it, facing it.
 const HUNTER_SPAWN := Vector3(0, 0, -20)
@@ -41,10 +47,12 @@ const ZONES := [
 ]
 ## Filler between the zones: [x, z, degrees].
 const ROCK_PALLETS := [[0, -28, 0], [0, 28, 0], [-28, 0, 90], [28, 0, 90]]
-const ROCKS := [[-8, -14], [8, -15], [-14, 8], [15, 8], [-6, -31], [6, -35], [-7, 34], [5, 24], [-33, -6],
-	[-30, 7], [34, -6], [32, 7], [-19, -2], [19, 1], [-3, 15], [12, -7]]
-const TREES := [[-7, -22], [7, -26], [4, -12], [-8, 12], [8, 15], [-4, 26], [7, 31], [-21, -8], [-26, 7],
-	[22, -8], [26, 8], [-37, 2], [37, -2], [2, 37], [-2, -37], [14, -2], [-15, 2]]
+const ROCKS := [[-8, -14], [8, -15], [-14, 8], [15, 8], [-6, -31], [5, 24], [-32, -7],
+	[-30, 7], [32, 7], [-19, -2], [19, 1], [-3, 15], [12, -7]]
+const LAMPS := [[-7, -22], [7, -26], [4, -12], [-8, 12], [8, 15], [-4, 26], [7, 31], [-21, -8], [-26, 7],
+	[22, -8], [26, 8], [14, -2], [-15, 2]]
+## Parked trains on tracks along the edges: [x, z, degrees]. At 0 degrees a train runs along X.
+const TRAINS := [[0, -36.5, 0], [0, 36.5, 0], [-36.5, 0, 90], [36.5, 0, 90]]
 
 ## Barricade nodes, in a fixed order so peers can refer to them by index.
 var barricades: Array = []
@@ -60,10 +68,13 @@ var loop_spots: Array[Vector3] = []
 ## Walkable-area map used by the bot to find paths. All solid geometry lives under it.
 var _nav: NavigationRegion3D
 var _wall_color := WALL_COLOR
+## Same seed on every computer, so graffiti and crate colors match (they're only looks anyway).
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	_build_environment()
+	_rng.seed = 1234
 	_nav = NavigationRegion3D.new()
 	add_child(_nav)
 	var half := SIZE / 2.0
@@ -83,8 +94,10 @@ func _ready() -> void:
 		_rock_pallet(_at(f[0], f[1], f[2]))
 	for r in ROCKS:
 		_rock(Vector3(r[0], 0, r[1]))
-	for t in TREES:
-		Greybox.box(_nav, Transform3D(Basis(), Vector3(t[0], 3.0, t[1])), Vector3(0.7, 6.0, 0.7), TREE_COLOR)
+	for l in LAMPS:
+		_lamp(Vector3(l[0], 0, l[1]))
+	for t in TRAINS:
+		_train(_at(t[0], t[1], t[2]))
 	_bake_navigation()
 
 
@@ -148,12 +161,32 @@ func _at(x: float, z: float, degrees: float) -> Transform3D:
 
 ## A straight wall in tile space, running along X from x0 to x1 at depth z.
 func _wall_x(tile: Transform3D, x0: float, x1: float, z: float) -> void:
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z)), Vector3(x1 - x0, WALL_H, WALL_T), _wall_color)
+	var xf := tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z))
+	Greybox.box(_nav, xf, Vector3(x1 - x0, WALL_H, WALL_T), _wall_color)
+	_graffiti(xf, x1 - x0)
 
 
 ## A straight wall in tile space, running along Z from z0 to z1 at x.
 func _wall_z(tile: Transform3D, z0: float, z1: float, x: float) -> void:
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0)), Vector3(WALL_T, WALL_H, z1 - z0), _wall_color)
+	var xf := tile * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0))
+	Greybox.box(_nav, xf, Vector3(z1 - z0, WALL_H, WALL_T), _wall_color)
+	_graffiti(xf, z1 - z0)
+
+
+## Splashes of spray paint on both faces of a wall segment `length` long (`xf` is its middle).
+func _graffiti(xf: Transform3D, length: float) -> void:
+	if length < 1.5:
+		return
+	for i in _rng.randi_range(1, 2):
+		var w := minf(length * 0.8, _rng.randf_range(1.0, 2.6))
+		var h := _rng.randf_range(0.4, 1.1)
+		var x := _rng.randf_range(-(length - w) / 2.0, (length - w) / 2.0)
+		var y := _rng.randf_range(-0.6, 0.5)
+		var c: Color = PAINT[_rng.randi() % PAINT.size()]
+		Greybox.box(self, xf * Transform3D(Basis(), Vector3(x, y, 0)), Vector3(w, h, WALL_T + 0.02), c, false)
+		# A smaller tag in another color on top.
+		var c2: Color = PAINT[_rng.randi() % PAINT.size()]
+		Greybox.box(self, xf * Transform3D(Basis(), Vector3(x + w * 0.15, y + h * 0.1, 0)), Vector3(w * 0.5, h * 0.4, WALL_T + 0.04), c2, false)
 
 
 ## A window opening centered at x along a wall at depth z (sill below, lintel above).
@@ -183,8 +216,44 @@ func _barricade(tile: Transform3D, x: float, z: float, degrees := 0.0) -> void:
 	barricades.append(b)
 
 
+## A stack of crates (the "rocks" of this map): one solid block, painted as a big and a small crate.
 func _rock(pos: Vector3) -> void:
-	Greybox.box(_nav, Transform3D(Basis(Vector3.UP, pos.x * 0.3 + pos.z * 0.1), pos + Vector3(0, 1.0, 0)), Vector3(2.2, 2.0, 1.6), ROCK_COLOR)
+	_crates(Transform3D(Basis(Vector3.UP, pos.x * 0.3 + pos.z * 0.1), pos))
+
+
+func _crates(xf: Transform3D) -> void:
+	var c: Color = PAINT[_rng.randi() % PAINT.size()]
+	var body := Greybox.box(_nav, xf * Transform3D(Basis(), Vector3(0, 1.0, 0)), Vector3(2.2, 2.0, 1.6), ROCK_COLOR)
+	# Painted panels and dark slats, so it reads as two stacked crates.
+	Greybox.box(body, Transform3D(Basis(), Vector3(0, 0.5, 0)), Vector3(2.22, 0.9, 1.62), c, false)
+	for y in [-0.05, 0.95]:
+		Greybox.box(body, Transform3D(Basis(), Vector3(0, y, 0)), Vector3(2.24, 0.1, 1.64), ROCK_COLOR.darkened(0.4), false)
+
+
+## A street lamp: a thin pole with a glowing head.
+func _lamp(pos: Vector3) -> void:
+	Greybox.box(_nav, Transform3D(Basis(), pos + Vector3(0, 2.25, 0)), Vector3(0.25, 4.5, 0.25), POLE_COLOR)
+	Greybox.box(self, Transform3D(Basis(), pos + Vector3(0, 4.5, -0.3)), Vector3(0.3, 0.15, 0.8), POLE_COLOR, false)
+	var head := Greybox.box(self, Transform3D(Basis(), pos + Vector3(0, 4.4, -0.55)), Vector3(0.35, 0.1, 0.35), LAMP_COLOR, false)
+	head.material_override = head.material_override.duplicate()
+	head.material_override.emission_enabled = true
+	head.material_override.emission = LAMP_COLOR
+
+
+## A parked train car on a short stretch of track. Too tall to vault; you run around it.
+func _train(tile: Transform3D) -> void:
+	# Track: two rails on sleepers, flat on the ground (just looks).
+	for x in range(-11, 12, 1):
+		Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, 0.03, 0)), Vector3(0.25, 0.06, 2.6), SLEEPER_COLOR, false)
+	for z in [-0.75, 0.75]:
+		Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 0.09, z)), Vector3(23, 0.08, 0.1), RAIL_COLOR, false)
+	var c: Color = PAINT[_rng.randi() % PAINT.size()]
+	var car := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 1.75, 0)), Vector3(14, 3.5, 3.0), Color(0.92, 0.92, 0.94))
+	Greybox.box(car, Transform3D(Basis(), Vector3(0, -0.8, 0)), Vector3(14.02, 0.5, 3.02), c, false)
+	Greybox.box(car, Transform3D(Basis(), Vector3(0, 0.55, 0)), Vector3(13.4, 0.8, 3.02), Color(0.15, 0.2, 0.3), false)
+	Greybox.box(car, Transform3D(Basis(), Vector3(0, 1.8, 0)), Vector3(13.8, 0.12, 2.8), Color(0.6, 0.62, 0.66), false)
+	# Graffiti on the sides.
+	_graffiti(tile * Transform3D(Basis(), Vector3(0, 1.1, 0)).scaled_local(Vector3(1, 1, 3.0 / WALL_T)), 12.0)
 
 
 func _tile(kind: Tile, tile: Transform3D) -> void:
@@ -301,10 +370,10 @@ func _barricade_loop(tile: Transform3D) -> void:
 	_wall_z(tile, -2.5, -WALL_T / 2.0, -4.5)
 
 
-## Filler: a barricade between two rocks. Weak, but it can buy a few seconds between zones.
+## Filler: a barricade between two crate stacks. Weak, but it can buy a few seconds between zones.
 func _rock_pallet(tile: Transform3D) -> void:
 	for x in [-2.1, 2.1]:
-		Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, 1.0, 0)), Vector3(2.2, 2.0, 1.6), ROCK_COLOR)
+		_crates(tile * Transform3D(Basis(), Vector3(x, 0, 0)))
 	_barricade(tile, 0, 0)
 
 
@@ -312,12 +381,14 @@ func _build_environment() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-55), deg_to_rad(35), 0)
 	sun.shadow_enabled = true
+	sun.light_color = Color(1.0, 0.96, 0.88)  # warm afternoon sun
+	sun.light_energy = 1.0
 	add_child(sun)
 
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.25, 0.35, 0.55)
-	sky_mat.sky_horizon_color = Color(0.55, 0.6, 0.66)
-	sky_mat.ground_horizon_color = Color(0.4, 0.4, 0.4)
+	sky_mat.sky_top_color = Color(0.2, 0.5, 0.95)
+	sky_mat.sky_horizon_color = Color(0.7, 0.85, 1.0)
+	sky_mat.ground_horizon_color = Color(0.6, 0.6, 0.6)
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	var env := Environment.new()
@@ -326,9 +397,11 @@ func _build_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.2  # punchy, cartoony colors
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.6, 0.63, 0.68)
-	env.fog_density = 0.006
+	env.fog_light_color = Color(0.7, 0.85, 1.0)
+	env.fog_density = 0.003
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
