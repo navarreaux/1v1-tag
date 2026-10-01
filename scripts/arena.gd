@@ -173,8 +173,10 @@ const TEST_TILES := [["T Wall", 16], ["L Window", 13], ["L Trash Can", 13], ["Ju
 	["Shack", 14], ["Long Wall", 16], ["Trash Can Loop", 16], ["Bent Wall", 18], ["L Pair", 14],
 	["Train Loop", 28], ["Short Wall", 11], ["Filler Trash Can", 11], ["Container", 7],
 	["Scrap Yard", 12], ["Drainage", 10], ["Lamp", 4], ["Depot", 20], ["Service Station", 32]]
-## Space between neighbouring tiles.
-const TEST_GAP := 8.0
+## Space between neighbouring tiles: wide enough that a chase at one tile stays there.
+const TEST_GAP := 24.0
+## Tile Test: [label, x] of each tile's middle, west to east.
+var test_tiles := []
 
 
 func _build_tile_test() -> void:
@@ -213,7 +215,17 @@ func _build_tile_test() -> void:
 			"Depot": _depot(xf)
 			"Service Station": _service_station(xf)
 		_label(name, Vector3(x + w / 2.0, 7.0, -20.0))
+		test_tiles.append([name, x + w / 2.0])
 		x += w + TEST_GAP
+
+
+## Tile Test: index of the tile nearest `pos` (by distance along the row).
+func nearest_test_tile(pos: Vector3) -> int:
+	var best := 0
+	for i in test_tiles.size():
+		if absf(test_tiles[i][1] - pos.x) < absf(test_tiles[best][1] - pos.x):
+			best = i
+	return best
 
 
 ## A big floating name that always faces the camera.

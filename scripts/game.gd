@@ -9,6 +9,7 @@ signal exit_to_menu(message: String)
 
 const PlayerScript := preload("res://scripts/player.gd")
 const Arena := preload("res://scripts/arena.gd")
+const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Bot := preload("res://scripts/bot.gd")
@@ -28,8 +29,11 @@ const BOT_ID := 2
 var vs_bot := false
 var map_id := 0  # which map to build (set before adding the game); see arena.gd
 var bot_frozen := false  # dev key F6: the bot stands still and does nothing
-## Tile Test: just you, no bot (one is still spawned, but hidden and switched off) and no time limit.
+## Tile Test: you start alone (the bot is spawned but parked, hidden and switched off), with no
+## time limit, and the Runner can't be downed. B brings the bot in at the nearest tile, or sends it
+## away again.
 var solo := false
+var test_bot_active := false
 var human_role := Role.RUNNER
 var closing := false
 var phase := Phase.LOBBY
@@ -90,12 +94,11 @@ func start_vs_bot(role: Role) -> void:
 	human_role = role
 	solo = map_id == Arena.Map.TILE_TEST
 	_spawn_players([1, BOT_ID])
+	var bot := Bot.new()
+	bot.game = self
+	players[BOT_ID].add_child(bot)
 	if solo:
 		bot_frozen = true
-	else:
-		var bot := Bot.new()
-		bot.game = self
-		players[BOT_ID].add_child(bot)
 	_begin_round(1)
 
 
@@ -160,9 +163,45 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.keycode:
 			KEY_F5:
 				_dev_reset_map()
+			KEY_B when solo:
+				_toggle_test_bot()
 			KEY_F6 when not solo:
 				bot_frozen = not bot_frozen
 				hud.flash("Bot frozen" if bot_frozen else "Bot unfrozen")
+
+
+## Tile Test: hide the bot and switch it off, below the map, out of sight and reach.
+func _park_test_bot() -> void:
+	var b = players[BOT_ID]
+	b.visible = false
+	b.collision_layer = 0
+	b.collision_mask = 0
+	b.set_physics_process(false)
+	b.global_position = Vector3(0, -50, 0)
+	bot_frozen = true
+	test_bot_active = false
+
+
+## Tile Test: bring the bot in at the tile you're nearest (a Runner bot just in front of it, a
+## Hunter bot a little further out), or send it away if it's already here.
+func _toggle_test_bot() -> void:
+	if test_bot_active:
+		_park_test_bot()
+		hud.flash("Bot removed")
+		return
+	var me = local_player()
+	var tile: Array = arena.test_tiles[arena.nearest_test_tile(me.global_position)]
+	var b = players[BOT_ID]
+	var spot := Vector3(tile[1], 0, 10.0 if b.role == Role.RUNNER else 22.0)
+	b.spawn_at(spot, 0.0)
+	b.visible = true
+	b.collision_layer = Greybox.PLAYER_LAYER
+	b.collision_mask = Greybox.WORLD_LAYER | Greybox.PLAYER_LAYER
+	b.set_physics_process(true)
+	b.stun = 0.0
+	bot_frozen = false
+	test_bot_active = true
+	hud.flash("Bot spawned at %s" % tile[0])
 
 
 func _dev_reset_map() -> void:
@@ -308,6 +347,12 @@ func request_hit() -> void:
 	if now - _last_hit_ms < HIT_GRACE_MS:
 		return
 	_last_hit_ms = now
+	if solo and runner_health <= 1:
+		# Tile Test: the Runner can't be downed. Every hit still counts as a hit (speed burst,
+		# flash), it just leaves them injured rather than down.
+		_set_runner_health.rpc(2)
+		_set_runner_health.rpc(1)
+		return
 	_set_runner_health.rpc(runner_health - 1)
 	if runner_health <= 0:
 		_finish_round("downed")
@@ -371,13 +416,7 @@ func _start_round(n: int, hunter: int, runner: int) -> void:
 			p.spawn_at(arena.runner_spawn, arena.runner_spawn_yaw)
 		p.frozen = true
 	if solo:
-		# Park the unused bot out of sight and out of reach, below the map.
-		var b = players[BOT_ID]
-		b.visible = false
-		b.collision_layer = 0
-		b.collision_mask = 0
-		b.set_physics_process(false)
-		b.global_position = Vector3(0, -50, 0)
+		_park_test_bot()
 	_last_hit_ms = -HIT_GRACE_MS
 	phase = Phase.COUNTDOWN
 	clock = TUNING.countdown_time

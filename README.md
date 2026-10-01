@@ -46,6 +46,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
 | Space | Knock over a trash can, vault a window, vault a knocked-over trash can (hold Shift to vault fast), kick a trash can away |
+| B (Tile Test) | Bring a bot in at the nearest tile, or send it away |
 | F5 (vs bot) | Dev: stand every trash can back up and unblock every window |
 | F6 (vs bot) | Dev: freeze or unfreeze the bot in place |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
@@ -62,7 +63,7 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 
 **The Last Stop** is a compact 80 x 80 m abandoned roadside service station: a 5 x 5 grid of 16 m cells, plus one sticking out on the right. The **service station** fills the middle-top four cells: a fenced forecourt with entrances on the west and south, a pump island under a canopy, a shop with a trash can between it and the fence, and one window in the east fence. Strong long walls sit on opposite edges (B and V), short walls at D, N and T, a shack at F and a trash can loop at R. The rest is filler with weak trash cans, container scrap yards that break sight lines, low drainage curbs in the corners and open escape lanes. The Runner starts inside the station; the Hunter starts in the open lane to the west.
 
-**Tile Test** puts every tile from both maps in one long row, once each, with its name floating above it, so tiles can be compared side by side when designing random tile spawning. It's just you: there's no bot and no time limit, in whichever role you picked. F5 still resets windows and trash cans.
+**Tile Test** puts every tile from both maps in one long row, once each, with its name floating above it, so tiles can be compared side by side when designing random tile spawning. Tiles are 24 m apart, so a chase at one stays there. You start alone in whichever role you picked, with no time limit. Press **B** to bring a bot in at the tile you're nearest (the HUD names it), and B again to send it away; walk to another tile and press B to try that one. The Runner can't be downed here: every hit counts (speed burst and all) but leaves them injured, never down. F5 still resets windows and trash cans.
 
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
