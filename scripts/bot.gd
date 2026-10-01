@@ -49,7 +49,7 @@ func _physics_process(delta: float) -> void:
 	_aiming = false
 	# Bot Runners always sprint (Shift held) when moving.
 	body.bot_sprint = body.role == Role.RUNNER
-	if not game.is_chasing() or body.frozen or body.downed or not _agent.is_inside_tree():
+	if game.bot_frozen or not game.is_chasing() or body.frozen or body.downed or not _agent.is_inside_tree():
 		_goal_time = 0.0
 		return
 	var foe = null

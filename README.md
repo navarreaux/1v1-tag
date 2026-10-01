@@ -46,6 +46,8 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
 | Space | Knock over a trash can, vault a window, slide over a trash can (hold Shift to slide fast), kick a trash can away |
+| F5 (vs bot) | Dev: stand every trash can back up and unblock every window |
+| F6 (vs bot) | Dev: freeze or unfreeze the bot in place |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
 | Esc | Pause menu (the match keeps going) |
 | Enter | Rematch / play again |

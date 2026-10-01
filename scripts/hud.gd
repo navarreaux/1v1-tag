@@ -144,6 +144,8 @@ func _process(delta: float) -> void:
 				_info.text += "   In chase"
 			if me.bloodlust > 0:
 				_info.text += "   Bloodlust %s" % ["I", "II", "III"][me.bloodlust - 1]
+		if game.vs_bot:
+			_info.text += "\nF5 reset windows & trash cans   F6 %s the bot" % ("unfreeze" if game.bot_frozen else "freeze")
 		if me.stun > 0.0:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting and me.role == Role.HUNTER:
