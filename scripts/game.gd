@@ -173,7 +173,7 @@ func find_interaction(p: Node) -> Dictionary:
 		var option := {}
 		if p.role == Role.RUNNER and b.state == Barricade.State.UP and d < 1.7:
 			option = {"kind": "drop", "index": i, "text": "Drop barricade"}
-		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5 and p.vault_cooldown <= 0.0:
+		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5:
 			option = {"kind": "vault_barricade", "index": i, "text": "Vault barricade"}
 		elif p.role == Role.HUNTER and b.state == Barricade.State.DOWN and d < 1.8:
 			option = {"kind": "break", "index": i, "text": "Break barricade"}
@@ -181,7 +181,7 @@ func find_interaction(p: Node) -> Dictionary:
 			best = option
 			best_dist = d
 	for i in arena.windows.size():
-		if p.role == Role.RUNNER and (arena.is_window_blocked(i) or p.vault_cooldown > 0.0):
+		if p.role == Role.RUNNER and arena.is_window_blocked(i):
 			continue
 		var d := _flat_distance(p.global_position, arena.windows[i].origin)
 		if d < 1.4 and d < best_dist:

@@ -147,8 +147,6 @@ func _process(delta: float) -> void:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting:
 			_prompt.text = "Breaking..."
-		elif me.role == Role.RUNNER and me.vault_cooldown > 0.0 and game.find_interaction(me).is_empty():
-			_prompt.text = "Catching your breath..."
 		elif me.role == Role.HUNTER and me.cooldown > 0.0:
 			_prompt.text = "Recovering from your swing..."
 		else:

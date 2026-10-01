@@ -42,12 +42,11 @@ var stun := 0.0
 var busy := 0.0  # seconds left in a vault or a barricade break
 var vaulting := false
 var boost := 0.0  # Runner speed boost after being hit
-var vault_cooldown := 0.0  # Runner can't vault again until this runs out
 
 ## Runner movement state.
 var sprinting := false
 var crouching := false
-var sprint_time := 0.0  # how long we've been sprinting at full speed
+var run_up := 0.0  # meters sprinted at full speed (for fast vaults)
 
 ## Hunter attack state.
 var lunge_time := -1.0  # seconds into the current lunge, or -1 when not lunging
@@ -132,13 +131,12 @@ func set_role(r: Role) -> void:
 	stun = 0.0
 	busy = 0.0
 	boost = 0.0
-	vault_cooldown = 0.0
 	lunge_time = -1.0
 	cooldown = 0.0
 	wiping = false
 	sprinting = false
 	crouching = false
-	sprint_time = 0.0
+	run_up = 0.0
 	_end_chase()
 	_on_busy_done = Callable()
 	_body_mesh.rotation = Vector3.ZERO
@@ -261,7 +259,6 @@ func _physics_process(delta: float) -> void:
 	stun = maxf(0.0, stun - delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	boost = maxf(0.0, boost - delta)
-	vault_cooldown = maxf(0.0, vault_cooldown - delta)
 	if busy > 0.0:
 		busy -= delta
 		if busy <= 0.0 and _on_busy_done.is_valid():
@@ -319,10 +316,9 @@ func _move(delta: float) -> void:
 	move_and_slide()
 	var flat_speed := Vector2(get_real_velocity().x, get_real_velocity().z).length()
 	if sprinting and flat_speed >= TUNING.runner_sprint_speed * 0.9:
-		sprint_time += delta
+		run_up += flat_speed * delta
 	else:
-		# Brief slowdowns (brushing a wall) only cost a little run-up.
-		sprint_time = maxf(0.0, sprint_time - delta * 3.0)
+		run_up = 0.0
 
 
 func _set_crouch(on: bool) -> void:
@@ -507,26 +503,28 @@ func vault(xf: Transform3D, kind: VaultKind) -> void:
 		var moving := get_real_velocity()
 		moving.y = 0.0
 		var straight := moving.length() > 0.5 and moving.normalized().dot(through) >= cos(deg_to_rad(TUNING.fast_vault_max_angle))
-		if sprinting and sprint_time >= TUNING.fast_vault_runup and straight:
-			speed_name = "fast"
-		elif sprinting:
-			speed_name = "medium"
-		var times := {
-			VaultKind.WINDOW: [TUNING.window_vault_fast, TUNING.window_vault_medium, TUNING.window_vault_slow],
-			VaultKind.BARRICADE: [TUNING.barricade_vault_fast, TUNING.barricade_vault_medium, TUNING.barricade_vault_slow],
-		}
-		duration = times[kind][["fast", "medium", "slow"].find(speed_name)]
+		if kind == VaultKind.WINDOW:
+			if sprinting and run_up >= TUNING.fast_vault_runup_meters and straight:
+				speed_name = "fast"
+			elif sprinting:
+				speed_name = "medium"
+			duration = {"fast": TUNING.window_vault_fast, "medium": TUNING.window_vault_medium, "slow": TUNING.window_vault_slow}[speed_name]
+		else:
+			speed_name = "fast" if sprinting else "slow"
+			duration = TUNING.barricade_vault_fast if sprinting else TUNING.barricade_vault_slow
 		rotation.y = atan2(-through.x, -through.z)
-		if speed_name == "fast":
-			# Fast vaults are loud: the Hunter gets a noise alert.
+		if speed_name != "slow":
+			# Rushed vaults are loud: the Hunter gets a noise alert. Slow vaults are silent.
 			game.make_noise.rpc(xf.origin)
+		# A fast vault keeps your momentum; anything slower makes you build a run-up again.
+		if speed_name != "fast":
+			run_up = 0.0
 
 	var start := global_position
 	var end := xf.origin + through * 1.0
 	end.y = start.y
 	vaulting = true
 	busy = duration
-	sprint_time = 0.0
 	velocity = Vector3.ZERO
 	var layer := collision_layer
 	var mask := collision_mask
@@ -538,9 +536,7 @@ func vault(xf: Transform3D, kind: VaultKind) -> void:
 	tween.finished.connect(func():
 		collision_layer = layer
 		collision_mask = mask
-		vaulting = false
-		if role == Role.RUNNER:
-			vault_cooldown = TUNING.runner_vault_cooldown)
+		vaulting = false)
 	if is_human_local():
 		game.hud.flash("%s vault" % speed_name.capitalize())
 

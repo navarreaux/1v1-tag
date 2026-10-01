@@ -16,23 +16,23 @@ extends Resource
 @export var runner_hit_boost_time := 1.8
 
 @export_group("Runner vaults")
-## A fast vault needs Shift held for at least this long, heading straight at the opening.
-@export var fast_vault_runup := 0.35
+## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast vault needs
+## a sprinting run-up of this many meters straight at a window. A fast vault keeps your momentum,
+## so you can chain another; a medium or slow vault resets it, so you need a fresh run-up.
+@export var fast_vault_runup_meters := 2.5
 ## How far off straight-on (in degrees) you can be and still fast vault.
 @export var fast_vault_max_angle := 40.0
 @export var window_vault_fast := 0.5
 @export var window_vault_medium := 0.9
-@export var window_vault_slow := 1.7
-@export var barricade_vault_fast := 0.5
-@export var barricade_vault_medium := 0.9
-@export var barricade_vault_slow := 1.3
-## After a vault ends, the Runner must wait this long before vaulting again (windows or barricades).
-@export var runner_vault_cooldown := 1.0
+@export var window_vault_slow := 1.5
+## Barricades only have two speeds: sprinting into one is fast, walking is slow.
+@export var barricade_vault_fast := 1.1
+@export var barricade_vault_slow := 2.0
 
 @export_group("Window blocking")
-## After the Runner vaults the same window this many times, it gets blocked for them.
+## After the Runner vaults the same window this many times in a chase, it gets blocked for them.
 @export var window_block_vaults := 3
-@export var window_block_time := 15.0
+@export var window_block_time := 30.0
 
 @export_group("Hunter")
 ## 4.6 is 115% of the Runner's sprint.
@@ -49,7 +49,7 @@ extends Resource
 @export var hunter_miss_cooldown := 1.5
 @export var hunter_cooldown_speed_mult := 0.35
 @export var hunter_window_vault_time := 1.7
-@export var hunter_break_time := 2.6
+@export var hunter_break_time := 2.34
 @export var hunter_stun_time := 2.0
 
 @export_group("Chase and bloodlust")
