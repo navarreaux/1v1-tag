@@ -28,6 +28,8 @@ const BOT_ID := 2
 var vs_bot := false
 var map_id := 0  # which map to build (set before adding the game); see arena.gd
 var bot_frozen := false  # dev key F6: the bot stands still and does nothing
+## Tile Test: just you, no bot (one is still spawned, but hidden and switched off) and no time limit.
+var solo := false
 var human_role := Role.RUNNER
 var closing := false
 var phase := Phase.LOBBY
@@ -86,10 +88,14 @@ func start_client() -> void:
 func start_vs_bot(role: Role) -> void:
 	vs_bot = true
 	human_role = role
+	solo = map_id == Arena.Map.TILE_TEST
 	_spawn_players([1, BOT_ID])
-	var bot := Bot.new()
-	bot.game = self
-	players[BOT_ID].add_child(bot)
+	if solo:
+		bot_frozen = true
+	else:
+		var bot := Bot.new()
+		bot.game = self
+		players[BOT_ID].add_child(bot)
 	_begin_round(1)
 
 
@@ -128,7 +134,7 @@ func _process(delta: float) -> void:
 				_set_phase.rpc(Phase.CHASE)
 		Phase.CHASE:
 			clock += delta
-			if host and clock >= TUNING.round_time_cap:
+			if host and clock >= TUNING.round_time_cap and not solo:
 				_finish_round("time")
 		Phase.ROUND_OVER:
 			clock -= delta
@@ -154,7 +160,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.keycode:
 			KEY_F5:
 				_dev_reset_map()
-			KEY_F6:
+			KEY_F6 when not solo:
 				bot_frozen = not bot_frozen
 				hud.flash("Bot frozen" if bot_frozen else "Bot unfrozen")
 
@@ -364,6 +370,14 @@ func _start_round(n: int, hunter: int, runner: int) -> void:
 		else:
 			p.spawn_at(arena.runner_spawn, arena.runner_spawn_yaw)
 		p.frozen = true
+	if solo:
+		# Park the unused bot out of sight and out of reach, below the map.
+		var b = players[BOT_ID]
+		b.visible = false
+		b.collision_layer = 0
+		b.collision_mask = 0
+		b.set_physics_process(false)
+		b.global_position = Vector3(0, -50, 0)
 	_last_hit_ms = -HIT_GRACE_MS
 	phase = Phase.COUNTDOWN
 	clock = TUNING.countdown_time
