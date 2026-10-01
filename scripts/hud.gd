@@ -145,8 +145,9 @@ func _process(delta: float) -> void:
 			if me.bloodlust > 0:
 				_info.text += "   Bloodlust %s" % ["I", "II", "III"][me.bloodlust - 1]
 		if game.solo:
-			var tile: String = game.arena.test_tiles[game.arena.nearest_test_tile(me.global_position)][0]
-			_info.text += "\nNearest tile: %s   B %s   F5 reset windows & trash cans" % [tile, "remove the bot" if game.test_bot_active else "spawn a bot here"]
+			_info.text += "\nT tile builder   B %s   F5 reset windows & trash cans   F6 %s the bot" % [
+				"remove the bot" if game.test_bot_active else "spawn a bot",
+				"unfreeze" if game.bot_frozen else "freeze"]
 		elif game.vs_bot:
 			_info.text += "\nF5 reset windows & trash cans   F6 %s the bot" % ("unfreeze" if game.bot_frozen else "freeze")
 		if me.stun > 0.0:
