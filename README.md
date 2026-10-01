@@ -45,7 +45,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Shift (hold) | Sprint (Runner) |
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
-| Space or E | Drop a barricade, vault a window or barricade, break a barricade |
+| Space | Drop a barricade, vault a window or barricade, break a barricade |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
 | Esc | Pause menu (the match keeps going) |
 | Enter | Rematch / play again |
@@ -59,6 +59,7 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 - Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
 - **Vaults** come in three speeds. Sprinting straight at a window for a moment gives a **fast** vault. Sprinting without enough run-up or at an angle gives a **medium** one. Walking or standing gives a **slow** one.
 - Fast vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls.
+- After any vault, the Runner has to wait **1 second** before vaulting again.
 - Vault the same window 3 times and it gets **blocked** (red) for 15 seconds.
 - Drop a **barricade** to block a gap. Dropping it on the Hunter **stuns** them.
 - Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.

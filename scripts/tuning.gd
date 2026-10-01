@@ -26,6 +26,8 @@ extends Resource
 @export var barricade_vault_fast := 0.5
 @export var barricade_vault_medium := 0.9
 @export var barricade_vault_slow := 1.3
+## After a vault ends, the Runner must wait this long before vaulting again (windows or barricades).
+@export var runner_vault_cooldown := 1.0
 
 @export_group("Window blocking")
 ## After the Runner vaults the same window this many times, it gets blocked for them.

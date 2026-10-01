@@ -42,6 +42,7 @@ var stun := 0.0
 var busy := 0.0  # seconds left in a vault or a barricade break
 var vaulting := false
 var boost := 0.0  # Runner speed boost after being hit
+var vault_cooldown := 0.0  # Runner can't vault again until this runs out
 
 ## Runner movement state.
 var sprinting := false
@@ -131,6 +132,7 @@ func set_role(r: Role) -> void:
 	stun = 0.0
 	busy = 0.0
 	boost = 0.0
+	vault_cooldown = 0.0
 	lunge_time = -1.0
 	cooldown = 0.0
 	wiping = false
@@ -259,6 +261,7 @@ func _physics_process(delta: float) -> void:
 	stun = maxf(0.0, stun - delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	boost = maxf(0.0, boost - delta)
+	vault_cooldown = maxf(0.0, vault_cooldown - delta)
 	if busy > 0.0:
 		busy -= delta
 		if busy <= 0.0 and _on_busy_done.is_valid():
@@ -535,7 +538,9 @@ func vault(xf: Transform3D, kind: VaultKind) -> void:
 	tween.finished.connect(func():
 		collision_layer = layer
 		collision_mask = mask
-		vaulting = false)
+		vaulting = false
+		if role == Role.RUNNER:
+			vault_cooldown = TUNING.runner_vault_cooldown)
 	if is_human_local():
 		game.hud.flash("%s vault" % speed_name.capitalize())
 

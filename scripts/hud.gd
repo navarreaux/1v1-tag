@@ -1,5 +1,5 @@
 extends CanvasLayer
-## On-screen text: the timer, your role and health, what the E key will do, and the pause menu.
+## On-screen text: the timer, your role and health, what the Space key will do, and the pause menu.
 
 const Role := preload("res://scripts/player.gd").Role
 
@@ -147,12 +147,14 @@ func _process(delta: float) -> void:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting:
 			_prompt.text = "Breaking..."
+		elif me.role == Role.RUNNER and me.vault_cooldown > 0.0 and game.find_interaction(me).is_empty():
+			_prompt.text = "Catching your breath..."
 		elif me.role == Role.HUNTER and me.cooldown > 0.0:
 			_prompt.text = "Recovering from your swing..."
 		else:
 			var it: Dictionary = game.find_interaction(me)
 			if not it.is_empty():
-				_prompt.text = "[E] " + it.text
+				_prompt.text = "[Space] " + it.text
 
 	if _flash_time > 0.0 and _big.text == "":
 		_big.text = _flash_text

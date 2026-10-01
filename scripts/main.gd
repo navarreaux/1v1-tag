@@ -73,7 +73,7 @@ func _setup_input() -> void:
 	_add_keys("move_back", [KEY_S, KEY_DOWN])
 	_add_keys("move_left", [KEY_A, KEY_LEFT])
 	_add_keys("move_right", [KEY_D, KEY_RIGHT])
-	_add_keys("interact", [KEY_E, KEY_SPACE])
+	_add_keys("interact", [KEY_SPACE])
 	_add_keys("sprint", [KEY_SHIFT])
 	_add_keys("crouch", [KEY_CTRL, KEY_C])
 	_add_keys("rematch", [KEY_ENTER, KEY_KP_ENTER])
@@ -146,7 +146,7 @@ func _build_menu() -> void:
 	ip_row.add_child(_button("Join", _join))
 
 	var help := Label.new()
-	help.text = "WASD move   Shift sprint   Ctrl crouch   Mouse look\nSpace / E drop, vault, break   Left click swing (hold to lunge)   Esc pause"
+	help.text = "WASD move   Shift sprint   Ctrl crouch   Mouse look\nSpace drop, vault, break   Left click swing (hold to lunge)   Esc pause"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.modulate = Color(1, 1, 1, 0.7)
 	box.add_child(help)
