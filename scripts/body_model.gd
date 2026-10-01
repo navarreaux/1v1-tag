@@ -15,7 +15,7 @@ const UPPER_ARM := 0.3
 const FOREARM := 0.3
 
 ## Shown when `pose()` gets these.
-enum Pose { NORMAL, CROUCH, VAULT, SLIDE, STUNNED, DOWNED, KICK }
+enum Pose { NORMAL, CROUCH, VAULT, HURDLE, STUNNED, DOWNED, KICK }
 
 var hips: Node3D
 var torso: Node3D
@@ -187,15 +187,16 @@ func animate(delta: float, pose: Pose) -> void:
 			knee_x = [-1.6, -0.6]
 			arm_x = [1.4, 1.4]
 			elbow_x = [0.3, 0.3]
-		Pose.SLIDE:
-			# Sliding feet first over a dropped barricade, leaning back.
-			hip_y = HIP_HEIGHT - 0.45
-			torso_x = 0.15
-			head_x = -0.3
-			leg_x = [0.7, 1.0]
-			knee_x = [-0.2, -0.7]
-			arm_x = [0.4, -0.5]
-			elbow_x = [0.5, 0.5]
+		Pose.HURDLE:
+			# Hurdling a fallen trash can: lead leg out straight, back leg tucked up behind,
+			# leaning forward with the arms swinging opposite.
+			hip_y = HIP_HEIGHT
+			torso_x = -0.45
+			head_x = 0.3
+			leg_x = [1.5, -0.5]
+			knee_x = [-0.1, -1.7]
+			arm_x = [-0.7, 1.3]
+			elbow_x = [0.6, 0.4]
 		Pose.STUNNED:
 			# Staggering: reeling back, swaying, hands flailing at the head.
 			var f := sin(_pose_time * 14.0)
@@ -239,8 +240,6 @@ func animate(delta: float, pose: Pose) -> void:
 	var lean := 0.0
 	if downed:
 		lean = -PI / 2.0
-	elif pose == Pose.SLIDE:
-		lean = 0.8  # tipped back
 	rotation.x = lerp_angle(rotation.x, lean, w)
 	rotation.z = lerp_angle(rotation.z, sway, w)
 	hips.position.y = lerpf(hips.position.y, hip_y, w)

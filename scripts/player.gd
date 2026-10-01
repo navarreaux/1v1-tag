@@ -17,7 +17,7 @@ const FLAG_CROUCH := 8
 const FLAG_SPRINT := 16
 const FLAG_VAULT := 32
 const FLAG_STUN := 64
-const FLAG_SLIDE := 128
+const FLAG_HURDLE := 128
 const FLAG_KICK := 256
 
 const GRAVITY := 20.0
@@ -77,7 +77,7 @@ var sprint_held := false  # Shift is down (pallet vaults are fast while it is)
 ## Recent movement, newest last, for fast window vaults: [seconds, flat velocity] per physics
 ## frame, with a zero velocity for frames spent not sprinting at full speed. Cleared by vaulting.
 var _sprint_log: Array = []
-var sliding := false  # this vault is a slide over a barricade rather than a window hop
+var hurdling := false  # this vault is a hurdle over a trash can rather than a window hop
 var last_vault := ""  # which window or barricade we vaulted last, like "w3" or "b5"
 var dropped_barricade := -1  # the barricade we just dropped, and how long until we may vault it
 var drop_lock := 0.0
@@ -164,7 +164,7 @@ func set_role(r: Role) -> void:
 	crouching = false
 	sprint_held = false
 	_sprint_log.clear()
-	sliding = false
+	hurdling = false
 	last_vault = ""
 	dropped_barricade = -1
 	drop_lock = 0.0
@@ -307,7 +307,7 @@ func _pose() -> BodyModel.Pose:
 	if downed:
 		return BodyModel.Pose.DOWNED
 	if (vaulting if local else _net_flags & FLAG_VAULT != 0):
-		return BodyModel.Pose.SLIDE if (sliding if local else _net_flags & FLAG_SLIDE != 0) else BodyModel.Pose.VAULT
+		return BodyModel.Pose.HURDLE if (hurdling if local else _net_flags & FLAG_HURDLE != 0) else BodyModel.Pose.VAULT
 	if (stun > 0.0 if local else _net_flags & FLAG_STUN != 0):
 		return BodyModel.Pose.STUNNED
 	if (kicking if local else _net_flags & FLAG_KICK != 0):
@@ -351,8 +351,8 @@ func _flags() -> int:
 		f |= FLAG_SPRINT
 	if vaulting:
 		f |= FLAG_VAULT
-	if sliding:
-		f |= FLAG_SLIDE
+	if hurdling:
+		f |= FLAG_HURDLE
 	if kicking:
 		f |= FLAG_KICK
 	if stun > 0.0:
@@ -641,7 +641,7 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 
 	var speed_name := "slow"
 	var duration: float = TUNING.hunter_window_vault_time
-	sliding = false
+	hurdling = false
 	if role == Role.RUNNER:
 		if kind == VaultKind.WINDOW:
 			# A fast vault needs a straight sprint at the window: going back over the window you just
@@ -655,8 +655,8 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 				speed_name = "medium"
 			duration = {"fast": TUNING.window_vault_fast, "medium": TUNING.window_vault_medium, "slow": TUNING.window_vault_slow}[speed_name]
 		else:
-			# Barricades: holding Shift while pressing Space slides over fast; otherwise it's slow.
-			sliding = true
+			# Trash cans: holding Shift while pressing Space hurdles over fast; otherwise it's slow.
+			hurdling = true
 			speed_name = "fast" if sprint_held else "slow"
 			duration = TUNING.barricade_vault_fast if sprint_held else TUNING.barricade_vault_slow
 		last_vault = key
@@ -668,6 +668,10 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 
 	var start := global_position
 	var end := xf.origin + through * 1.0
+	if kind == VaultKind.BARRICADE:
+		# Trash can gaps are wide: hurdle straight across from wherever along the gap you are.
+		var along := xf.basis.x.normalized()
+		end += along * clampf((start - xf.origin).dot(along), -0.9, 0.9)
 	end.y = start.y
 	vaulting = true
 	busy = duration
@@ -677,15 +681,15 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 	collision_layer = 0
 	collision_mask = 0
 	var hop := 0.6 if speed_name != "fast" else 0.4
-	if sliding:
-		hop = 0.15  # slide over low, feet first
+	if hurdling:
+		hop = 0.75  # jump up and over the fallen can
 	var tween := create_tween()
 	tween.tween_method(func(t: float): global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * hop, 0.0, 1.0, duration)
 	tween.finished.connect(func():
 		collision_layer = layer
 		collision_mask = mask
 		vaulting = false
-		sliding = false)
+		hurdling = false)
 	if is_human_local():
 		game.hud.flash("%s vault" % speed_name.capitalize())
 

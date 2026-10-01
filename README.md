@@ -45,7 +45,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Shift (hold) | Sprint (Runner) |
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
-| Space | Knock over a trash can, vault a window, slide over a trash can (hold Shift to slide fast), kick a trash can away |
+| Space | Knock over a trash can, vault a window, vault a knocked-over trash can (hold Shift to vault fast), kick a trash can away |
 | F5 (vs bot) | Dev: stand every trash can back up and unblock every window |
 | F6 (vs bot) | Dev: freeze or unfreeze the bot in place |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
@@ -72,10 +72,10 @@ Both players can **slide along walls** at full speed: if you run into a wall at 
 - **Window vaults** come in three speeds, as in Dead by Daylight. A **fast** vault (0.5 s) needs you to have been sprinting at the window, from straight on up to 55° off, for at least 0.5 s (about 2 m of run-up). Anything over 80% of sprint speed counts as sprinting. Sprinting without that gives a **medium** vault (0.9 s). Walking gives a **slow** one (1.5 s).
 - There's no fixed cooldown between vaults, but every vault starts that 0.5 s count over.
 - Going straight back over the window you just vaulted needs 50% longer (0.75 s) of sprinting at it to be fast.
-- **Trash cans**: slide over a knocked-over can fast (0.55 s) if you hold Shift while pressing Space, slow (2.0 s) if you don't.
+- **Trash cans**: hurdle a knocked-over can fast (0.6 s) if you hold Shift while pressing Space, slow (2.2 s) if you don't.
 - Fast and medium vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls. Slow vaults are silent.
 - Vault the same window 3 times and it gets **blocked** (red) for 30 seconds. If 30 seconds pass between two of those vaults, the count starts over.
-- Knock a **trash can** over to block a gap: it falls and leans at 45° against the structure on the other side. Knocking it onto the Hunter **stuns** them (they stagger, so you can see it). It takes a moment: you stand still for 0.35 s, and you can't slide over that can for 1 s after.
+- A standing **trash can** sits in the middle of a 3 m gap, with room to run past it on either side. Knock it over to block the gap: it falls and leans at 45° against the structure on the other side. Knocking it onto the Hunter **stuns** them (they stagger, so you can see it). It takes a moment: you stand still for 0.35 s, and you can't vault that can for 1 s after.
 - Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.
 - A **heartbeat** plays when the Hunter is within 32 m and gets faster and louder as they come closer.
 
@@ -84,7 +84,7 @@ Both players can **slide along walls** at full speed: if you run into a wall at 
 - **Lunge**: click to swing with a short lunge, or hold to lunge further. Hits within about 2.2 m.
 - After a hit the Hunter **wipes** the blade (2.7 s, slowed). After a miss they **recover** (1.5 s, slowed).
 - **Bloodlust**: after 15, 25 and 35 seconds of continuous chase the Hunter gets faster (+0.2, +0.4, +0.6 m/s). It resets on a hit, a stun, kicking a trash can away, or losing the Runner for 8 seconds.
-- Vaults windows slowly (1.7 s). Can't slide over trash cans; kicks them away for good instead (2.34 s, with a wind-up the Runner can see).
+- Vaults windows slowly (1.7 s). Can't vault trash cans; kicks them away for good instead (2.34 s, with a wind-up the Runner can see).
 
 A round ends when the Runner is downed, or after 5 minutes.
 

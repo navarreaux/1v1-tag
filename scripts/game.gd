@@ -196,12 +196,12 @@ func find_interaction(p: Node) -> Dictionary:
 		var b = arena.barricades[i]
 		var d := _flat_distance(p.global_position, b.global_position)
 		var option := {}
-		if p.role == Role.RUNNER and b.state == Barricade.State.UP and d < 1.7:
+		if p.role == Role.RUNNER and b.state == Barricade.State.UP and d < 1.9:
 			option = {"kind": "drop", "index": i, "text": "Knock over trash can"}
-		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5 \
+		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.9 \
 				and not (i == p.dropped_barricade and p.drop_lock > 0.0):
-			option = {"kind": "vault_barricade", "index": i, "text": "Slide over trash can"}
-		elif p.role == Role.HUNTER and b.state == Barricade.State.DOWN and d < 1.8:
+			option = {"kind": "vault_barricade", "index": i, "text": "Vault trash can"}
+		elif p.role == Role.HUNTER and b.state == Barricade.State.DOWN and d < 2.0:
 			option = {"kind": "break", "index": i, "text": "Kick trash can away"}
 		if not option.is_empty() and d < best_dist:
 			best = option
