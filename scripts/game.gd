@@ -178,7 +178,8 @@ func find_interaction(p: Node) -> Dictionary:
 		var option := {}
 		if p.role == Role.RUNNER and b.state == Barricade.State.UP and d < 1.7:
 			option = {"kind": "drop", "index": i, "text": "Drop barricade"}
-		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5:
+		elif p.role == Role.RUNNER and b.state == Barricade.State.DOWN and d < 1.5 \
+				and not (i == p.dropped_barricade and p.drop_lock > 0.0):
 			option = {"kind": "vault_barricade", "index": i, "text": "Vault barricade"}
 		elif p.role == Role.HUNTER and b.state == Barricade.State.DOWN and d < 1.8:
 			option = {"kind": "break", "index": i, "text": "Break barricade"}
@@ -205,10 +206,14 @@ func do_interact(p: Node) -> void:
 	match it.kind:
 		"drop":
 			request_drop.rpc_id(1, i)
+			# Dropping takes a moment: stand still briefly, and no instant vault over it.
+			p.start_busy(TUNING.drop_pause, Callable())
+			p.dropped_barricade = i
+			p.drop_lock = TUNING.drop_vault_lockout
 		"vault_barricade":
-			p.vault(arena.barricades[i].global_transform, PlayerScript.VaultKind.BARRICADE)
+			p.vault(arena.barricades[i].global_transform, PlayerScript.VaultKind.BARRICADE, "b%d" % i)
 		"vault_window":
-			p.vault(arena.windows[i], PlayerScript.VaultKind.WINDOW)
+			p.vault(arena.windows[i], PlayerScript.VaultKind.WINDOW, "w%d" % i)
 			if p.role == Role.RUNNER:
 				window_vaulted.rpc(i)
 		"break":

@@ -22,7 +22,7 @@ Under **Play alone against a bot**, click **I'm the Runner** or **I'm the Hunter
 plays the other side. Each round shows your time; press **Enter** to play another round
 (you keep the same role) or **Esc** for the menu.
 
-- The bot Hunter chases you, swings when close, vaults windows and breaks barricades in its way.
+- The bot Hunter chases you, swings when close and vaults windows. At a dropped barricade it works out whether breaking it or running around is quicker, and does that.
 - The bot Runner loops windows and barricades, fast vaults, and drops barricades on you.
 
 ### Play both sides on one PC
@@ -54,7 +54,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 
 The chase copies Dead by Daylight's mechanics as closely as we can (not its art, names or perks).
 
-**The map** is 80 x 80 m, laid out like a Dead by Daylight map. Both players start at the **depot**, a very strong Runner building in the north-east corner: a corridor runs all the way around a solid block inside, with a barricade across one side, so it loops safely until the Hunter breaks that barricade. The Runner starts inside and the Hunter about 20 m away. When the chase begins, the Runner gets a **3 second head start** before the Hunter can move. The other corners hold **zones** of tiles spaced well apart: T walls, L walls (with a window or a barricade), jungle gyms, shacks, long walls and barricade walls, plus a T wall in the middle. Between the zones is sparse **filler**: crate stacks, street lamps and crate barricades, with parked trains along the edges. Every barricade stands between two solid things, so it can always be looped.
+**The map** is 112 x 112 m, laid out like a Dead by Daylight map. Both players start at the **depot**, a very strong Runner building in the north-east corner: a corridor runs all the way around a solid block inside, with a barricade across one side, so it loops safely until the Hunter breaks that barricade. The Runner starts inside and the Hunter about 23 m away. When the chase begins, the Runner gets a **3 second head start** before the Hunter can move. The other corners hold **zones** of tiles spaced well apart. Tiles are long and thin rather than square, so no single block can be looped forever: T walls, L walls (with a window or a barricade), jungle gyms, shacks, long walls and barricade walls, plus a T wall in the middle. Between the zones is sparse **filler**: shipping containers, street lamps and barricades between two short containers, with parked trains along the edges. Every barricade stands between two solid things, so it can always be looped.
 
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
@@ -63,10 +63,11 @@ Both players can **slide along walls** at full speed: if you run into a wall at 
 - Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
 - **Window vaults** come in three speeds, as in Dead by Daylight. Sprint straight at a window for at least 2.5 m for a **fast** vault (0.5 s). Sprinting without that run-up, or at an angle, gives a **medium** vault (0.9 s). Walking gives a **slow** one (1.5 s).
 - There's no fixed cooldown between vaults. A fast vault keeps your momentum, so you can chain into another. A medium or slow vault resets it, so you need a fresh 2.5 m run-up before your next fast vault.
-- **Barricade vaults** are fast (1.1 s) when sprinting and slow (2.0 s) when walking.
+- Going straight back over the window or barricade you just vaulted needs 50% more run-up (3.75 m) to be fast.
+- **Barricade vaults** are fast (1.1 s) when sprinting and slow (2.0 s) when walking (or when re-vaulting the same barricade without the longer run-up).
 - Fast and medium vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls. Slow vaults are silent.
 - Vault the same window 3 times in a chase and it gets **blocked** (red) for 30 seconds.
-- Drop a **barricade** to block a gap. Dropping it on the Hunter **stuns** them.
+- Drop a **barricade** to block a gap. Dropping it on the Hunter **stuns** them. Dropping takes a moment: you stand still for 0.35 s, and you can't vault that barricade for 1 s after.
 - Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.
 - A **heartbeat** plays when the Hunter is within 32 m and gets faster and louder as they come closer.
 
@@ -89,7 +90,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/game.gd` | Rounds, hits, barricades and who wins; the host decides these |
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
 | `scripts/body_model.gd` | The cartoony people (outfits, hats, the Runner's backpack) and their walk, run, crouch, vault and downed animations |
-| `scripts/arena.gd` | Builds the 80 x 80 m map: the corner depot, tile zones, filler |
+| `scripts/arena.gd` | Builds the 112 x 112 m map: the corner depot, tile zones, filler |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
 | `scripts/bot.gd` | The computer opponent |
 | `scripts/effects.gd` | Scratch marks, blood, noise alerts, heartbeat |

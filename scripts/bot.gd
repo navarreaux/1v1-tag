@@ -1,6 +1,7 @@
 extends Node
 ## A computer-controlled opponent for playing alone. Add it as a child of a player body.
-## As Hunter it chases, swings, and breaks barricades in its way.
+## As Hunter it chases and swings, and at a dropped barricade it works out whether breaking it
+## or running around is quicker.
 ## As Runner it runs to the far side of nearby windows and barricades, drops barricades
 ## on the Hunter, and vaults when its path goes through a window.
 
@@ -12,6 +13,8 @@ const REPATH_TIME := 0.25
 const STUCK_TIME := 1.0
 ## After vaulting, the bot Hunter walks around for a while instead of vaulting back and forth.
 const HUNTER_VAULT_REST := 6.0
+## How long the Hunter sticks with a choice to break or go around, so it doesn't dither.
+const DECIDE_TIME := 1.0
 
 var game: Node
 var body: CharacterBody3D
@@ -24,6 +27,10 @@ var _stuck_timer := 0.0
 var _stuck_from := Vector3.ZERO
 var _think_delay := 0.0
 var _vault_rest := 0.0
+var _go_around := false
+var _decide := 0.0
+## True while the Hunter stands still to swing over something (a dropped barricade, a window sill).
+var _aiming := false
 
 
 func _ready() -> void:
@@ -39,6 +46,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	body.bot_input = Vector2.ZERO
 	body.bot_attack_held = false
+	_aiming = false
 	# Bot Runners always sprint (Shift held) when moving.
 	body.bot_sprint = body.role == Role.RUNNER
 	if not game.is_chasing() or body.frozen or body.downed or not _agent.is_inside_tree():
@@ -62,16 +70,25 @@ func _physics_process(delta: float) -> void:
 	if body.role == Role.HUNTER:
 		_hunt(delta, foe)
 	else:
+		_go_around = false
 		_flee(delta, foe)
+	var map: RID = game.arena.nav_blocked_map if _go_around else body.get_world_3d().navigation_map
+	if _agent.get_navigation_map() != map:
+		_agent.set_navigation_map(map)
+		_agent.target_position = _goal
 	_follow_path(delta)
 
 
-func _hunt(_delta: float, runner) -> void:
+func _hunt(delta: float, runner) -> void:
 	if runner.downed:
 		return
+	_decide -= delta
+	if _decide <= 0.0:
+		_decide = DECIDE_TIME
+		_go_around = _quicker_around(runner.global_position)
 	_set_goal(runner.global_position)
-	# A dropped barricade between us and the Runner: break it rather than walk around.
-	if body.busy <= 0.0 and game.is_chasing():
+	# Right at a dropped barricade with the Runner across it, and breaking is quicker: break it.
+	if not _go_around and body.busy <= 0.0 and game.is_chasing():
 		for i in game.arena.barricades.size():
 			var b = game.arena.barricades[i]
 			if b.state != Barricade.State.DOWN or body.global_position.distance_to(b.global_position) > 1.8:
@@ -83,14 +100,73 @@ func _hunt(_delta: float, runner) -> void:
 				return
 	var to: Vector3 = runner.global_position - body.global_position
 	to.y = 0.0
-	# Close and in sight: turn to face the Runner and lunge, holding the swing to reach further.
 	if to.length() < 4.0 and _can_see(runner):
-		body.yaw = atan2(-to.x, -to.z)
-		body.bot_input = Vector2(0, -1)
-		body.bot_attack_held = true
-		if to.length() < 3.2 and _think_delay <= 0.0:
-			_think_delay = 0.25  # a human-ish reaction time
-			body.try_attack()
+		var clear := _clear_run(runner)
+		# Close with nothing in the way: turn to face the Runner and lunge, holding the swing to reach
+		# further. Something low in the way (a window sill, a dropped barricade): only swing when the
+		# Runner is within reach, otherwise keep following the path around instead of running into it.
+		if clear or (to.length() < TUNING.hunter_attack_range and body.cooldown <= 0.0):
+			body.yaw = atan2(-to.x, -to.z)
+			body.bot_attack_held = true
+			if clear:
+				body.bot_input = Vector2(0, -1)
+			else:
+				_aiming = true
+			if to.length() < 3.2 and _think_delay <= 0.0:
+				_think_delay = 0.25  # a human-ish reaction time
+				body.try_attack()
+
+
+## True if a dropped barricade lies on the way to `target` and walking around it is quicker
+## than walking up to it and breaking it.
+func _quicker_around(target: Vector3) -> bool:
+	var me := body.global_position
+	var layers := _agent.navigation_layers
+	var through := NavigationServer3D.map_get_path(body.get_world_3d().navigation_map, me, target, true, layers)
+	if not _crosses_dropped(through):
+		return false
+	var around := NavigationServer3D.map_get_path(game.arena.nav_blocked_map, me, target, true, layers)
+	if around.is_empty() or around[around.size() - 1].distance_to(target) > 1.5:
+		return false  # no way around
+	var speed: float = TUNING.hunter_speed
+	var break_time := _length(through) / speed + TUNING.hunter_break_time
+	return _length(around) / speed < break_time
+
+
+func _crosses_dropped(path: PackedVector3Array) -> bool:
+	for b in game.arena.barricades:
+		if b.state != Barricade.State.DOWN:
+			continue
+		for i in range(1, path.size()):
+			var a: Vector3 = b.to_local(path[i - 1])
+			var c: Vector3 = b.to_local(path[i])
+			if a.z * c.z >= 0.0:
+				continue
+			var x := lerpf(a.x, c.x, a.z / (a.z - c.z))
+			if absf(x) < Barricade.GAP_WIDTH:
+				return true
+	return false
+
+
+func _length(path: PackedVector3Array) -> float:
+	var total := 0.0
+	for i in range(1, path.size()):
+		total += path[i - 1].distance_to(path[i])
+	return total
+
+
+## True if the Hunter could run straight at `target` without bumping into anything.
+func _clear_run(target: Node3D) -> bool:
+	var shape := SphereShape3D.new()
+	shape.radius = 0.3
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.collision_mask = 1
+	q.transform = Transform3D(Basis(), body.global_position + Vector3(0, 0.5, 0))
+	q.motion = target.global_position - body.global_position
+	q.motion.y = 0.0
+	var hit := body.get_world_3d().direct_space_state.cast_motion(q)
+	return hit.is_empty() or hit[0] >= 1.0
 
 
 func _flee(delta: float, hunter) -> void:
@@ -194,7 +270,7 @@ func _follow_path(delta: float) -> void:
 	var next := _agent.get_next_path_position()
 	var dir := next - me
 	dir.y = 0.0
-	if body.bot_input == Vector2.ZERO and dir.length() > 0.05:
+	if body.bot_input == Vector2.ZERO and not _aiming and dir.length() > 0.05:
 		body.yaw = atan2(-dir.x, -dir.z)
 		body.bot_input = Vector2(0, -1)
 
@@ -206,7 +282,7 @@ func _follow_path(delta: float) -> void:
 				game.do_interact(body)
 		"vault_barricade", "break":
 			var b = game.arena.barricades[it.index]
-			if _crosses(b.global_transform, me, next, _goal):
+			if not (it.kind == "break" and _go_around) and _crosses(b.global_transform, me, next, _goal):
 				game.do_interact(body)
 
 	# If we haven't really moved in a while, try whatever is in reach, then pick a new spot.

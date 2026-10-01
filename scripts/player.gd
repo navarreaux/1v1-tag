@@ -65,6 +65,10 @@ var boost := 0.0  # Runner speed boost after being hit
 var sprinting := false
 var crouching := false
 var run_up := 0.0  # meters sprinted at full speed (for fast vaults)
+var revault_run_up := 0.0  # the same, but only reset by vaulting (for re-vaulting the same thing)
+var last_vault := ""  # which window or barricade we vaulted last, like "w3" or "b5"
+var dropped_barricade := -1  # the barricade we just dropped, and how long until we may vault it
+var drop_lock := 0.0
 
 ## Hunter attack state.
 var lunge_time := -1.0  # seconds into the current lunge, or -1 when not lunging
@@ -147,6 +151,10 @@ func set_role(r: Role) -> void:
 	sprinting = false
 	crouching = false
 	run_up = 0.0
+	revault_run_up = 0.0
+	last_vault = ""
+	dropped_barricade = -1
+	drop_lock = 0.0
 	_end_chase()
 	_on_busy_done = Callable()
 	_build_model()
@@ -297,6 +305,7 @@ func _physics_process(delta: float) -> void:
 	stun = maxf(0.0, stun - delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	boost = maxf(0.0, boost - delta)
+	drop_lock = maxf(0.0, drop_lock - delta)
 	if busy > 0.0:
 		busy -= delta
 		if busy <= 0.0 and _on_busy_done.is_valid():
@@ -360,8 +369,10 @@ func _move(delta: float) -> void:
 	var flat_speed := Vector2(get_real_velocity().x, get_real_velocity().z).length()
 	if sprinting and flat_speed >= TUNING.runner_sprint_speed * 0.9:
 		run_up += flat_speed * delta
+		revault_run_up += flat_speed * delta
 	else:
 		run_up = 0.0
+		revault_run_up = 0.0
 
 
 ## Like Dead by Daylight: running at a wall at a shallow angle slides you along it at full speed
@@ -560,7 +571,8 @@ func reset_bloodlust() -> void:
 
 ## Jumps through a window or over a dropped barricade at `xf`.
 ## Runners vault fast, medium or slow depending on how they come in; Hunters only vault windows, slowly.
-func vault(xf: Transform3D, kind: VaultKind) -> void:
+## `key` names what is being vaulted ("w3" = window 3, "b5" = barricade 5).
+func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 	var n := xf.basis.z
 	n.y = 0.0
 	n = n.normalized()
@@ -576,15 +588,22 @@ func vault(xf: Transform3D, kind: VaultKind) -> void:
 		var moving := get_real_velocity()
 		moving.y = 0.0
 		var straight := moving.length() > 0.5 and moving.normalized().dot(through) >= cos(deg_to_rad(TUNING.fast_vault_max_angle))
+		# Going back over the thing you just vaulted needs a longer fresh run-up to be fast.
+		var again := key != "" and key == last_vault
+		var enough_run: bool = revault_run_up >= TUNING.fast_vault_runup_meters * TUNING.revault_runup_mult if again \
+			else run_up >= TUNING.fast_vault_runup_meters
 		if kind == VaultKind.WINDOW:
-			if sprinting and run_up >= TUNING.fast_vault_runup_meters and straight:
+			if sprinting and enough_run and straight:
 				speed_name = "fast"
 			elif sprinting:
 				speed_name = "medium"
 			duration = {"fast": TUNING.window_vault_fast, "medium": TUNING.window_vault_medium, "slow": TUNING.window_vault_slow}[speed_name]
 		else:
-			speed_name = "fast" if sprinting else "slow"
-			duration = TUNING.barricade_vault_fast if sprinting else TUNING.barricade_vault_slow
+			var fast := sprinting and (enough_run or not again)
+			speed_name = "fast" if fast else "slow"
+			duration = TUNING.barricade_vault_fast if fast else TUNING.barricade_vault_slow
+		last_vault = key
+		revault_run_up = 0.0
 		rotation.y = atan2(-through.x, -through.z)
 		if speed_name != "slow":
 			# Rushed vaults are loud: the Hunter gets a noise alert. Slow vaults are silent.
