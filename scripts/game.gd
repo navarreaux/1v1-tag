@@ -405,6 +405,8 @@ func _set_barricade(index: int, state: Barricade.State) -> void:
 	var hunter = players.get(hunter_id)
 	if state == Barricade.State.BROKEN and hunter:
 		b.kick_away(hunter.global_position)
+	elif state == Barricade.State.DOWN and b.state == Barricade.State.UP:
+		b.knock_over()
 	else:
 		b.set_state(state)
 	if state == Barricade.State.DOWN:
