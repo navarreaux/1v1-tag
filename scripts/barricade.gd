@@ -16,7 +16,7 @@ var _dropped: Node3D
 
 
 func _ready() -> void:
-	_upright = Greybox.box(self, Transform3D(Basis(), Vector3(0.85, 0.9, 0)), Vector3(0.15, 1.8, 1.1), COLOR, false)
+	_upright = Greybox.box(self, Transform3D(Basis(), Vector3(0.9, 0.9, 0)), Vector3(0.12, 1.8, 1.1), COLOR)
 	_dropped = Greybox.box(self, Transform3D(Basis(), Vector3(0, 0.45, 0)), Vector3(GAP_WIDTH, 0.9, 0.35), COLOR)
 	set_state(State.UP)
 
@@ -24,6 +24,7 @@ func _ready() -> void:
 func set_state(s: State) -> void:
 	state = s
 	_upright.visible = s == State.UP
+	_upright.collision_layer = Greybox.WORLD_LAYER if s == State.UP else 0
 	_dropped.visible = s == State.DOWN
 	_dropped.collision_layer = Greybox.WORLD_LAYER if s == State.DOWN else 0
 

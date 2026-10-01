@@ -4,6 +4,7 @@ extends Node3D
 
 const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
+const TUNING := preload("res://tuning.tres")
 
 const SIZE := 40.0
 const WALL_H := 2.6
@@ -26,6 +27,10 @@ const RUNNER_SPAWN_YAW := 0.0
 var barricades: Array = []
 ## One transform per window: origin = middle of the window at floor level, basis.z = direction you vault.
 var windows: Array[Transform3D] = []
+## Per window: Runner vaults so far, and seconds left blocked (0 = open).
+var window_vaults: Array[int] = []
+var window_blocked: Array[float] = []
+var _window_blockers: Array[Node3D] = []
 ## Points worth running to (both sides of every window and barricade); used by the bot.
 var loop_spots: Array[Vector3] = []
 
@@ -70,6 +75,7 @@ func _bake_navigation() -> void:
 		link.start_position = w.origin + w.basis.z * 1.0
 		link.end_position = w.origin - w.basis.z * 1.0
 		link.travel_cost = 3.0
+		link.navigation_layers = 2  # so a bot can choose to ignore windows
 		_nav.add_child(link)
 	for xf in windows:
 		loop_spots.append(xf.origin + xf.basis.z * 2.0)
@@ -83,6 +89,28 @@ func _bake_navigation() -> void:
 func reset() -> void:
 	for b in barricades:
 		b.set_state(Barricade.State.UP)
+	for i in windows.size():
+		window_vaults[i] = 0
+		window_blocked[i] = 0.0
+
+
+func is_window_blocked(i: int) -> bool:
+	return window_blocked[i] > 0.0
+
+
+## Counts a Runner vault. Too many on the same window and it's blocked for a while,
+## so the Runner can't loop one window forever.
+func note_window_vault(i: int) -> void:
+	window_vaults[i] += 1
+	if window_vaults[i] >= TUNING.window_block_vaults:
+		window_vaults[i] = 0
+		window_blocked[i] = TUNING.window_block_time
+
+
+func _process(delta: float) -> void:
+	for i in windows.size():
+		window_blocked[i] = maxf(0.0, window_blocked[i] - delta)
+		_window_blockers[i].visible = window_blocked[i] > 0.0
 
 
 func _at(x: float, z: float, degrees: float) -> Transform3D:
@@ -106,6 +134,11 @@ func _window(tile: Transform3D, x: float, z: float) -> void:
 	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, SILL_H / 2.0, z)), size_sill, WINDOW_COLOR)
 	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, (LINTEL_Y + WALL_H) / 2.0, z)), size_top, WINDOW_COLOR)
 	windows.append(tile * Transform3D(Basis(), Vector3(x, 0, z)))
+	window_vaults.append(0)
+	window_blocked.append(0.0)
+	var blocker := Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, (SILL_H + LINTEL_Y) / 2.0, z)), Vector3(WINDOW_W, LINTEL_Y - SILL_H, 0.05), Color(0.8, 0.1, 0.1), false)
+	blocker.visible = false
+	_window_blockers.append(blocker)
 
 
 func _barricade(tile: Transform3D, x: float, z: float) -> void:

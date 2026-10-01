@@ -12,6 +12,7 @@ const Arena := preload("res://scripts/arena.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Bot := preload("res://scripts/bot.gd")
+const Effects := preload("res://scripts/effects.gd")
 const TUNING := preload("res://tuning.tres")
 
 const Role := PlayerScript.Role
@@ -40,6 +41,7 @@ var players := {}  # peer id -> player node
 var last_reason := ""
 var arena: Node3D
 var hud: CanvasLayer
+var effects: Node3D
 
 var _players_root: Node3D
 var _last_hit_ms := -HIT_GRACE_MS
@@ -53,6 +55,9 @@ func _ready() -> void:
 	_players_root = Node3D.new()
 	_players_root.name = "Players"
 	add_child(_players_root)
+	effects = Effects.new()
+	effects.game = self
+	add_child(effects)
 	hud = Hud.new()
 	hud.game = self
 	add_child(hud)
@@ -176,6 +181,8 @@ func find_interaction(p: Node) -> Dictionary:
 			best = option
 			best_dist = d
 	for i in arena.windows.size():
+		if p.role == Role.RUNNER and arena.is_window_blocked(i):
+			continue
 		var d := _flat_distance(p.global_position, arena.windows[i].origin)
 		if d < 1.4 and d < best_dist:
 			best = {"kind": "vault_window", "index": i, "text": "Vault window"}
@@ -192,12 +199,19 @@ func do_interact(p: Node) -> void:
 		"drop":
 			request_drop.rpc_id(1, i)
 		"vault_barricade":
-			p.vault(arena.barricades[i].global_transform, TUNING.runner_barricade_vault_time)
+			p.vault(arena.barricades[i].global_transform, PlayerScript.VaultKind.BARRICADE)
 		"vault_window":
-			var t: float = TUNING.hunter_window_vault_time if p.role == Role.HUNTER else TUNING.runner_window_vault_time
-			p.vault(arena.windows[i], t)
+			p.vault(arena.windows[i], PlayerScript.VaultKind.WINDOW)
+			if p.role == Role.RUNNER:
+				window_vaulted.rpc(i)
 		"break":
-			p.start_busy(TUNING.hunter_break_time, func(): request_break.rpc_id(1, i))
+			start_break(p, i)
+
+
+func start_break(p: Node, i: int) -> void:
+	p.start_busy(TUNING.hunter_break_time, func():
+		p.reset_bloodlust()
+		request_break.rpc_id(1, i))
 
 
 func _flat_distance(a: Vector3, b: Vector3) -> float:
@@ -343,6 +357,9 @@ func _set_runner_health(health: int) -> void:
 	var runner = get_runner()
 	if runner:
 		runner.on_health_changed(health, hurt)
+	var hunter = players.get(hunter_id)
+	if hurt and hunter and hunter.is_local():
+		hunter.reset_bloodlust()
 	if hurt and health > 0:
 		hud.flash("Runner hit!")
 
@@ -355,6 +372,19 @@ func _set_barricade(index: int, state: Barricade.State) -> void:
 		for p in players.values():
 			if p.is_local() and b.in_zone(p.global_position):
 				p.push_out_of(b)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func window_vaulted(index: int) -> void:
+	arena.note_window_vault(index)
+	if arena.is_window_blocked(index):
+		hud.flash("Window blocked!")
+
+
+## A loud noise (a fast vault). Only the Hunter is shown where it came from.
+@rpc("any_peer", "call_local", "reliable")
+func make_noise(pos: Vector3) -> void:
+	effects.noise_alert(pos)
 
 
 @rpc("authority", "call_local", "reliable")

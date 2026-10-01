@@ -1,58 +1,92 @@
 extends CharacterBody3D
-## One player's body. The computer that owns it moves it and sends its position to the other computer.
-## Hunters see in first person; Runners see in third person.
+## One player's body. The computer that owns it moves it and sends its state to the other computer.
+## Hunters see in first person; Runners see over the shoulder in third person.
 
 const Greybox := preload("res://scripts/greybox.gd")
 const TUNING := preload("res://tuning.tres")
 
 enum Role { RUNNER, HUNTER }
+enum VaultKind { WINDOW, BARRICADE }
+
+## Bits in the state flags sent to the other computer.
+const FLAG_LUNGE := 1
+const FLAG_WIPE := 2
+const FLAG_RECOVER := 4
+const FLAG_CROUCH := 8
+const FLAG_SPRINT := 16
 
 const GRAVITY := 20.0
 const MOUSE_SENSITIVITY := 0.0025
 const RADIUS := 0.35
 const HEIGHT := 1.8
-const HUNTER_COLOR := Color(0.85, 0.25, 0.2)
+const CROUCH_HEIGHT := 1.1
+const HUNTER_COLOR := Color(0.55, 0.12, 0.1)
 const RUNNER_COLOR := Color(0.25, 0.5, 0.9)
+const INJURED_COLOR := Color(0.45, 0.3, 0.6)
+const ARM_COLOR := Color(0.25, 0.1, 0.08)
+const BLADE_COLOR := Color(0.7, 0.7, 0.72)
 
 var game: Node  # set by game.gd before this is added
 ## Bots are run by the computer that owns them, like a human player, but get no camera.
 var is_bot := false
-## Which way the bot wants to go this frame (same meaning as WASD), set by bot.gd.
+## What the bot wants this frame, set by bot.gd (same meaning as the keys).
 var bot_input := Vector2.ZERO
+var bot_sprint := false
+var bot_attack_held := false
 var role := Role.RUNNER
 
 var frozen := true  # true during countdowns and between rounds
 var downed := false
+var injured := false
 var stun := 0.0
 var busy := 0.0  # seconds left in a vault or a barricade break
 var vaulting := false
-var cooldown := 0.0  # Hunter is slowed after a swing
-var lunge := 0.0
 var boost := 0.0  # Runner speed boost after being hit
+
+## Runner movement state.
+var sprinting := false
+var crouching := false
+var sprint_time := 0.0  # how long we've been sprinting at full speed
+
+## Hunter attack state.
+var lunge_time := -1.0  # seconds into the current lunge, or -1 when not lunging
+var cooldown := 0.0  # Hunter is slowed after a swing
+var wiping := false  # the cooldown came from a hit (wipe the blade) rather than a miss
+
+## Hunter chase state (only tracked on the Hunter's own computer).
+var in_chase := false
+var chase_time := 0.0
+var bloodlust := 0
+var _unseen_time := 0.0
 
 var yaw := 0.0
 var pitch := 0.0
 
+var _shape: CollisionShape3D
 var _body_mesh: MeshInstance3D
 var _rig: Node3D
 var _spring: SpringArm3D
 var _camera: Camera3D
+var _arm: Node3D  # the Hunter's swinging arm (on the camera for yourself, on the body for others)
+var _red_stain: SpotLight3D
 var _on_busy_done := Callable()
 var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
+var _net_flags := 0
+var _remote_lunge := 0.0
 
 
 func _ready() -> void:
 	collision_layer = Greybox.PLAYER_LAYER
 	collision_mask = Greybox.WORLD_LAYER | Greybox.PLAYER_LAYER
 
-	var shape := CollisionShape3D.new()
+	_shape = CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = RADIUS
 	capsule.height = HEIGHT
-	shape.shape = capsule
-	shape.position.y = HEIGHT / 2.0
-	add_child(shape)
+	_shape.shape = capsule
+	_shape.position.y = HEIGHT / 2.0
+	add_child(_shape)
 
 	_body_mesh = MeshInstance3D.new()
 	var cm := CapsuleMesh.new()
@@ -64,41 +98,61 @@ func _ready() -> void:
 	# A little visor so you can tell which way the other player is facing.
 	Greybox.box(_body_mesh, Transform3D(Basis(), Vector3(0, 0.5, -0.3)), Vector3(0.4, 0.15, 0.15), Color(0.1, 0.1, 0.1), false)
 
-	if is_multiplayer_authority() and not is_bot:
+	if is_human_local():
 		_rig = Node3D.new()
 		_rig.top_level = true
 		add_child(_rig)
 		_spring = SpringArm3D.new()
 		_spring.add_excluded_object(get_rid())
 		_spring.collision_mask = Greybox.WORLD_LAYER
+		_spring.margin = 0.2
 		_rig.add_child(_spring)
 		_camera = Camera3D.new()
-		_camera.fov = 85
+		_camera.fov = 87
 		_spring.add_child(_camera)
 		_camera.current = true
 
 	set_role(role)
 
 
+## True for the player sitting at this computer (not a bot, not the other computer's player).
+func is_human_local() -> bool:
+	return is_multiplayer_authority() and not is_bot
+
+
+func is_local() -> bool:
+	return is_multiplayer_authority()
+
+
 func set_role(r: Role) -> void:
 	role = r
 	downed = false
+	injured = false
 	stun = 0.0
 	busy = 0.0
-	cooldown = 0.0
-	lunge = 0.0
 	boost = 0.0
+	lunge_time = -1.0
+	cooldown = 0.0
+	wiping = false
+	sprinting = false
+	crouching = false
+	sprint_time = 0.0
+	_end_chase()
 	_on_busy_done = Callable()
-	_body_mesh.material_override = Greybox.material(HUNTER_COLOR if r == Role.HUNTER else RUNNER_COLOR)
 	_body_mesh.rotation = Vector3.ZERO
 	_body_mesh.position.y = HEIGHT / 2.0
+	_body_mesh.scale = Vector3.ONE
+	_update_color()
+	_build_arm()
+	_build_red_stain()
 	if _rig:
 		var hunter := r == Role.HUNTER
-		_spring.spring_length = 0.0 if hunter else 3.2
-		_spring.position = Vector3.ZERO if hunter else Vector3(0.5, 0, 0)
+		# Runner camera: behind and over the right shoulder.
+		_spring.spring_length = 0.0 if hunter else 2.4
+		_spring.position = Vector3.ZERO if hunter else Vector3(0.55, 0.15, 0)
 		# Hunters are first person, so hide your own body.
 		_body_mesh.visible = not hunter
-		pitch = 0.0 if hunter else -0.25
+		pitch = 0.0 if hunter else -0.2
 
 
 func spawn_at(pos: Vector3, facing: float) -> void:
@@ -110,12 +164,55 @@ func spawn_at(pos: Vector3, facing: float) -> void:
 	_net_yaw = facing
 
 
-func is_local() -> bool:
-	return is_multiplayer_authority()
+func _update_color() -> void:
+	var c := RUNNER_COLOR
+	if role == Role.HUNTER:
+		c = HUNTER_COLOR
+	elif injured:
+		c = INJURED_COLOR
+	_body_mesh.material_override = Greybox.material(c)
+
+
+## The Hunter's arm with a blade. It's a pivot at the shoulder; poses rotate it.
+func _build_arm() -> void:
+	if _arm:
+		_arm.queue_free()
+		_arm = null
+	if role != Role.HUNTER:
+		return
+	_arm = Node3D.new()
+	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.3)), Vector3(0.1, 0.1, 0.6), ARM_COLOR, false)
+	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0.02, -0.75)), Vector3(0.03, 0.14, 0.4), BLADE_COLOR, false)
+	if _camera:
+		_camera.add_child(_arm)
+		_arm.position = Vector3(0.28, -0.28, -0.15)
+	else:
+		add_child(_arm)
+		_arm.position = Vector3(0.38, 1.4, -0.1)
+	for m in _arm.get_children():
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _camera else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+## The red light the Hunter casts in front of them, so the Runner can tell where they're looking.
+## The Hunter never sees their own.
+func _build_red_stain() -> void:
+	if _red_stain:
+		_red_stain.queue_free()
+		_red_stain = null
+	if role != Role.HUNTER or is_human_local():
+		return
+	_red_stain = SpotLight3D.new()
+	_red_stain.light_color = Color(1, 0.05, 0.05)
+	_red_stain.light_energy = 6.0
+	_red_stain.spot_range = 9.0
+	_red_stain.spot_angle = 14.0
+	_red_stain.position = Vector3(0, 1.7, -0.3)
+	_red_stain.rotation.x = deg_to_rad(-38)
+	add_child(_red_stain)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_local() or is_bot or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if not is_human_local() or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
 	if event is InputEventMouseMotion:
 		yaw -= event.relative.x * MOUSE_SENSITIVITY
@@ -123,7 +220,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if role == Role.HUNTER:
 			pitch = clampf(pitch, -1.4, 1.4)
 		else:
-			pitch = clampf(pitch, -1.1, 0.5)
+			pitch = clampf(pitch, -1.1, 0.6)
 	elif event.is_action_pressed("interact"):
 		game.do_interact(self)
 	elif event.is_action_pressed("attack"):
@@ -132,19 +229,28 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	if _rig:
-		var eye := 1.6 if role == Role.HUNTER else 1.5
+		var eye := 1.6 if role == Role.HUNTER else 1.45
 		if downed:
 			eye = 0.6
+		elif crouching:
+			eye = 0.95
 		_rig.global_position = global_position + Vector3(0, eye, 0)
 		_rig.rotation = Vector3(pitch, yaw, 0)
 	if not is_local():
-		# Smoothly follow the position the other computer sent.
+		# Smoothly follow what the other computer sent.
 		var t := minf(1.0, delta * 15.0)
 		if global_position.distance_to(_net_pos) > 4.0:
 			global_position = _net_pos
 		else:
 			global_position = global_position.lerp(_net_pos, t)
 		rotation.y = lerp_angle(rotation.y, _net_yaw, t)
+		crouching = _net_flags & FLAG_CROUCH != 0
+		sprinting = _net_flags & FLAG_SPRINT != 0
+		_remote_lunge = _remote_lunge + delta if _net_flags & FLAG_LUNGE else 0.0
+	if not downed and role == Role.RUNNER:
+		_body_mesh.scale.y = lerpf(_body_mesh.scale.y, CROUCH_HEIGHT / HEIGHT if crouching else 1.0, minf(1.0, delta * 12.0))
+		_body_mesh.position.y = HEIGHT * _body_mesh.scale.y / 2.0
+	_animate_arm(delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -159,30 +265,46 @@ func _physics_process(delta: float) -> void:
 			var done := _on_busy_done
 			_on_busy_done = Callable()
 			done.call()
-	if lunge > 0.0:
-		lunge -= delta
-		if _check_hit():
-			lunge = 0.0
-			cooldown = TUNING.hunter_hit_cooldown
-			game.request_hit.rpc_id(1)
-		elif lunge <= 0.0:
-			cooldown = TUNING.hunter_miss_cooldown
+	if role == Role.HUNTER:
+		_update_lunge(delta)
+		_update_chase(delta)
 
 	if not vaulting:
 		_move(delta)
-	_net_state.rpc(global_position, rotation.y)
+	_net_state.rpc(global_position, rotation.y, _flags())
+
+
+func _flags() -> int:
+	var f := 0
+	if lunge_time >= 0.0:
+		f |= FLAG_LUNGE
+	if cooldown > 0.0:
+		f |= FLAG_WIPE if wiping else FLAG_RECOVER
+	if crouching:
+		f |= FLAG_CROUCH
+	if sprinting:
+		f |= FLAG_SPRINT
+	return f
 
 
 func _move(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 	var input := Vector2.ZERO
+	var want_sprint := false
+	var want_crouch := false
 	if frozen or downed or stun > 0.0 or busy > 0.0:
 		pass
 	elif is_bot:
 		input = bot_input
+		want_sprint = bot_sprint
 	elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		want_sprint = Input.is_action_pressed("sprint")
+		want_crouch = Input.is_action_pressed("crouch")
+	if role == Role.RUNNER:
+		_set_crouch(want_crouch and not downed)
+		sprinting = want_sprint and not crouching and input.length() > 0.1
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	var speed := current_speed()
 	velocity.x = dir.x * speed
@@ -192,27 +314,73 @@ func _move(delta: float) -> void:
 	elif dir.length() > 0.1:
 		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), minf(1.0, delta * 12.0))
 	move_and_slide()
+	var flat_speed := Vector2(get_real_velocity().x, get_real_velocity().z).length()
+	if sprinting and flat_speed >= TUNING.runner_sprint_speed * 0.9:
+		sprint_time += delta
+	else:
+		# Brief slowdowns (brushing a wall) only cost a little run-up.
+		sprint_time = maxf(0.0, sprint_time - delta * 3.0)
+
+
+func _set_crouch(on: bool) -> void:
+	if on == crouching:
+		return
+	crouching = on
+	var h := CROUCH_HEIGHT if on else HEIGHT
+	_shape.shape.height = h
+	_shape.position.y = h / 2.0
 
 
 func current_speed() -> float:
 	var t = TUNING
 	if role == Role.HUNTER:
 		var s: float = t.hunter_speed
-		if lunge > 0.0:
+		if bloodlust > 0:
+			s += t.bloodlust_tier_speed[bloodlust - 1]
+		if lunge_time >= 0.0:
 			s *= t.hunter_lunge_mult
 		elif cooldown > 0.0:
 			s *= t.hunter_cooldown_speed_mult
 		return s
-	var s: float = t.runner_speed
+	var s: float = t.runner_walk_speed
+	if crouching:
+		s = t.runner_crouch_speed
+	elif sprinting:
+		s = t.runner_sprint_speed
 	if boost > 0.0:
 		s *= t.runner_hit_boost_mult
 	return s
 
 
+# --- Hunter: attacking ---------------------------------------------------
+
 func try_attack() -> void:
-	if role != Role.HUNTER or frozen or stun > 0.0 or busy > 0.0 or cooldown > 0.0 or lunge > 0.0:
+	if role != Role.HUNTER or frozen or stun > 0.0 or busy > 0.0 or cooldown > 0.0 or lunge_time >= 0.0:
 		return
-	lunge = TUNING.hunter_lunge_time
+	lunge_time = 0.0
+
+
+func _attack_held() -> bool:
+	if is_bot:
+		return bot_attack_held
+	return Input.is_action_pressed("attack") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+
+
+func _update_lunge(delta: float) -> void:
+	if lunge_time < 0.0:
+		return
+	lunge_time += delta
+	if _check_hit():
+		lunge_time = -1.0
+		cooldown = TUNING.hunter_hit_cooldown
+		wiping = true
+		game.request_hit.rpc_id(1)
+		return
+	var keep_going: bool = lunge_time < TUNING.hunter_lunge_min or (_attack_held() and lunge_time < TUNING.hunter_lunge_max)
+	if not keep_going:
+		lunge_time = -1.0
+		cooldown = TUNING.hunter_miss_cooldown
+		wiping = false
 
 
 ## Hunter only: is the Runner close, in front of us, and not behind a wall?
@@ -227,37 +395,149 @@ func _check_hit() -> bool:
 	var forward := Basis(Vector3.UP, yaw) * Vector3.FORWARD
 	if to.length() > 0.5 and forward.dot(to.normalized()) < cos(deg_to_rad(40)):
 		return false
-	var eye := global_position + Vector3(0, 1.5, 0)
-	var query := PhysicsRayQueryParameters3D.create(eye, runner.global_position + Vector3(0, 1.0, 0), Greybox.WORLD_LAYER)
+	return _line_of_sight(runner, 1.0)
+
+
+func _line_of_sight(target: Node3D, target_height: float) -> bool:
+	var eye := global_position + Vector3(0, 1.6, 0)
+	var query := PhysicsRayQueryParameters3D.create(eye, target.global_position + Vector3(0, target_height, 0), Greybox.WORLD_LAYER)
 	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
 
-## Jumps through a window (or over a dropped barricade) described by `xf`.
-func vault(xf: Transform3D, duration: float) -> void:
+## Moves the arm toward the pose for what the Hunter is doing.
+func _animate_arm(delta: float) -> void:
+	if _arm == null:
+		return
+	var lunging: bool
+	var lunge_t: float
+	var wipe: bool
+	var recover: bool
+	if is_local():
+		lunging = lunge_time >= 0.0
+		lunge_t = lunge_time
+		wipe = cooldown > 0.0 and wiping
+		recover = cooldown > 0.0 and not wiping
+	else:
+		lunging = _net_flags & FLAG_LUNGE != 0
+		lunge_t = _remote_lunge
+		wipe = _net_flags & FLAG_WIPE != 0
+		recover = _net_flags & FLAG_RECOVER != 0
+	# Rotation (pitch, yaw) in radians. Positive pitch raises the arm.
+	var target := Vector2(-0.35, 0.15)  # idle: held low and forward
+	var speed := 10.0
+	if lunging:
+		# Raise, then slash down and across as the lunge goes on.
+		var k := clampf(lunge_t / TUNING.hunter_lunge_min, 0.0, 1.0)
+		target = Vector2(lerpf(0.9, -0.5, k), lerpf(0.5, -0.6, k))
+		speed = 30.0
+	elif wipe:
+		target = Vector2(-0.9, -0.7)  # wiping the blade
+		speed = 6.0
+	elif recover:
+		target = Vector2(-1.0, 0.0)  # swung through and drooping
+		speed = 8.0
+	var w := minf(1.0, delta * speed)
+	_arm.rotation.x = lerpf(_arm.rotation.x, target.x, w)
+	_arm.rotation.y = lerpf(_arm.rotation.y, target.y, w)
+	_arm.position.z = lerpf(_arm.position.z, -0.25 if lunging else -0.1 if not _camera else -0.15, w)
+
+
+# --- Hunter: chase and bloodlust -----------------------------------------
+
+func _update_chase(delta: float) -> void:
+	var runner = game.get_runner()
+	if runner == null or not game.is_chasing() or runner.downed:
+		_end_chase()
+		return
+	var to: Vector3 = runner.global_position - global_position
+	to.y = 0.0
+	var forward := Basis(Vector3.UP, yaw) * Vector3.FORWARD
+	var sees: bool = to.length() < TUNING.chase_sight_range \
+		and (to.length() < 3.0 or forward.dot(to.normalized()) > cos(deg_to_rad(55))) \
+		and _line_of_sight(runner, 1.2)
+	if sees:
+		in_chase = true
+		_unseen_time = 0.0
+	elif in_chase:
+		_unseen_time += delta
+		if _unseen_time > TUNING.chase_lose_time:
+			_end_chase()
+	if not in_chase:
+		return
+	chase_time += delta
+	bloodlust = 0
+	var tiers = TUNING.bloodlust_tier_times
+	for i in tiers.size():
+		if chase_time >= tiers[i]:
+			bloodlust = i + 1
+
+
+func _end_chase() -> void:
+	in_chase = false
+	reset_bloodlust()
+
+
+## Bloodlust is lost when the Hunter hits, breaks a barricade, gets stunned, or loses the chase.
+func reset_bloodlust() -> void:
+	chase_time = 0.0
+	bloodlust = 0
+	_unseen_time = 0.0
+
+
+# --- Vaulting, breaking, stuns -------------------------------------------
+
+## Jumps through a window or over a dropped barricade at `xf`.
+## Runners vault fast, medium or slow depending on how they come in; Hunters only vault windows, slowly.
+func vault(xf: Transform3D, kind: VaultKind) -> void:
 	var n := xf.basis.z
 	n.y = 0.0
 	n = n.normalized()
 	var side := signf((global_position - xf.origin).dot(n))
 	if side == 0.0:
 		side = 1.0
+	var through := -n * side  # direction we're vaulting
+
+	var speed_name := "slow"
+	var duration: float = TUNING.hunter_window_vault_time
+	if role == Role.RUNNER:
+		# Fast vaults need you to be running straight at the opening.
+		var moving := get_real_velocity()
+		moving.y = 0.0
+		var straight := moving.length() > 0.5 and moving.normalized().dot(through) >= cos(deg_to_rad(TUNING.fast_vault_max_angle))
+		if sprinting and sprint_time >= TUNING.fast_vault_runup and straight:
+			speed_name = "fast"
+		elif sprinting:
+			speed_name = "medium"
+		var times := {
+			VaultKind.WINDOW: [TUNING.window_vault_fast, TUNING.window_vault_medium, TUNING.window_vault_slow],
+			VaultKind.BARRICADE: [TUNING.barricade_vault_fast, TUNING.barricade_vault_medium, TUNING.barricade_vault_slow],
+		}
+		duration = times[kind][["fast", "medium", "slow"].find(speed_name)]
+		rotation.y = atan2(-through.x, -through.z)
+		if speed_name == "fast":
+			# Fast vaults are loud: the Hunter gets a noise alert.
+			game.make_noise.rpc(xf.origin)
+
 	var start := global_position
-	var end := xf.origin - n * side * 1.0
+	var end := xf.origin + through * 1.0
 	end.y = start.y
 	vaulting = true
 	busy = duration
+	sprint_time = 0.0
 	velocity = Vector3.ZERO
 	var layer := collision_layer
 	var mask := collision_mask
 	collision_layer = 0
 	collision_mask = 0
-	if role == Role.RUNNER:
-		rotation.y = atan2(n.x * side, n.z * side)
+	var hop := 0.6 if speed_name != "fast" else 0.4
 	var tween := create_tween()
-	tween.tween_method(func(t: float): global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.6, 0.0, 1.0, duration)
+	tween.tween_method(func(t: float): global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * hop, 0.0, 1.0, duration)
 	tween.finished.connect(func():
 		collision_layer = layer
 		collision_mask = mask
 		vaulting = false)
+	if is_human_local():
+		game.hud.flash("%s vault" % speed_name.capitalize())
 
 
 ## Stand still for `duration` seconds, then run `done` (used for breaking barricades).
@@ -268,7 +548,8 @@ func start_busy(duration: float, done: Callable) -> void:
 
 func apply_stun(duration: float) -> void:
 	stun = duration
-	lunge = 0.0
+	lunge_time = -1.0
+	reset_bloodlust()
 	if not vaulting:
 		busy = 0.0
 		_on_busy_done = Callable()
@@ -283,8 +564,12 @@ func push_out_of(barricade: Node3D) -> void:
 
 func on_health_changed(health: int, hurt: bool) -> void:
 	downed = health <= 0
+	injured = health == 1
+	_update_color()
 	if downed:
 		# Lie down.
+		_set_crouch(false)
+		_body_mesh.scale = Vector3.ONE
 		_body_mesh.rotation.x = PI / 2.0
 		_body_mesh.position.y = RADIUS
 	elif hurt and is_local():
@@ -292,6 +577,7 @@ func on_health_changed(health: int, hurt: bool) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _net_state(pos: Vector3, facing: float) -> void:
+func _net_state(pos: Vector3, facing: float, flags: int) -> void:
 	_net_pos = pos
 	_net_yaw = facing
+	_net_flags = flags

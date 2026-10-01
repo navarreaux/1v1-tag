@@ -134,6 +134,15 @@ func _process(delta: float) -> void:
 		_info.text = "You are the %s" % _role_name(me)
 		if me.role == Role.RUNNER:
 			_info.text += "   Health: %s" % ["Downed", "Injured", "Healthy"][clampi(game.runner_health, 0, 2)]
+			if me.crouching:
+				_info.text += "   Crouching"
+			elif not me.sprinting:
+				_info.text += "   Walking (hold Shift to sprint)"
+		else:
+			if me.in_chase:
+				_info.text += "   In chase"
+			if me.bloodlust > 0:
+				_info.text += "   Bloodlust %s" % ["I", "II", "III"][me.bloodlust - 1]
 		if me.stun > 0.0:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting:

@@ -10,6 +10,8 @@ const Barricade := preload("res://scripts/barricade.gd")
 
 const REPATH_TIME := 0.25
 const STUCK_TIME := 1.0
+## After vaulting, the bot Hunter walks around for a while instead of vaulting back and forth.
+const HUNTER_VAULT_REST := 6.0
 
 var game: Node
 var body: CharacterBody3D
@@ -21,6 +23,7 @@ var _goal_time := 0.0
 var _stuck_timer := 0.0
 var _stuck_from := Vector3.ZERO
 var _think_delay := 0.0
+var _vault_rest := 0.0
 
 
 func _ready() -> void:
@@ -29,11 +32,15 @@ func _ready() -> void:
 	_agent.path_desired_distance = 0.6
 	_agent.target_desired_distance = 0.6
 	_agent.radius = 0.4
+	_agent.navigation_layers = 1 | 2  # 1 = ground, 2 = window shortcuts
 	body.add_child.call_deferred(_agent)
 
 
 func _physics_process(delta: float) -> void:
 	body.bot_input = Vector2.ZERO
+	body.bot_attack_held = false
+	# Bot Runners always sprint (Shift held) when moving.
+	body.bot_sprint = body.role == Role.RUNNER
 	if not game.is_chasing() or body.frozen or body.downed or not _agent.is_inside_tree():
 		_goal_time = 0.0
 		return
@@ -45,6 +52,13 @@ func _physics_process(delta: float) -> void:
 		return
 	_think_delay -= delta
 	_repath -= delta
+	if body.vaulting and body.role == Role.HUNTER:
+		_vault_rest = HUNTER_VAULT_REST
+	_vault_rest -= delta
+	var layers := 1 if _vault_rest > 0.0 else 1 | 2
+	if _agent.navigation_layers != layers:
+		_agent.navigation_layers = layers
+		_repath = 0.0
 	if body.role == Role.HUNTER:
 		_hunt(delta, foe)
 	else:
@@ -56,13 +70,25 @@ func _hunt(_delta: float, runner) -> void:
 	if runner.downed:
 		return
 	_set_goal(runner.global_position)
+	# A dropped barricade between us and the Runner: break it rather than walk around.
+	if body.busy <= 0.0 and game.is_chasing():
+		for i in game.arena.barricades.size():
+			var b = game.arena.barricades[i]
+			if b.state != Barricade.State.DOWN or body.global_position.distance_to(b.global_position) > 1.8:
+				continue
+			var my_side: float = b.to_local(body.global_position).z
+			var their_side: float = b.to_local(runner.global_position).z
+			if my_side * their_side < 0.0 and runner.global_position.distance_to(b.global_position) < 10.0:
+				game.start_break(body, i)
+				return
 	var to: Vector3 = runner.global_position - body.global_position
 	to.y = 0.0
-	# Close and in sight: turn to face the Runner and swing.
-	if to.length() < 3.5 and _can_see(runner):
+	# Close and in sight: turn to face the Runner and lunge, holding the swing to reach further.
+	if to.length() < 4.0 and _can_see(runner):
 		body.yaw = atan2(-to.x, -to.z)
 		body.bot_input = Vector2(0, -1)
-		if to.length() < TUNING.hunter_attack_range * 0.9 and _think_delay <= 0.0:
+		body.bot_attack_held = true
+		if to.length() < 3.2 and _think_delay <= 0.0:
 			_think_delay = 0.25  # a human-ish reaction time
 			body.try_attack()
 
@@ -80,10 +106,42 @@ func _flee(delta: float, hunter) -> void:
 		_goal_time = 0.0
 		return
 
+	# When the Hunter is close, loop an obstacle: keep it between us by heading for its far side.
+	if dist < 12.0:
+		var loop := _pick_loop(me, threat)
+		if loop != Vector3.INF:
+			_goal_time = 0.0
+			_set_goal(loop)
+			return
+
 	_goal_time -= delta
 	if _goal_time <= 0.0 or me.distance_to(_goal) < 1.0:
 		_goal_time = 1.5
 		_set_goal(_pick_flee_spot(me, threat))
+
+
+## The far side (from the Hunter) of the nearest window or barricade we can reach first,
+## or Vector3.INF if there isn't one.
+func _pick_loop(me: Vector3, threat: Vector3) -> Vector3:
+	var openings: Array[Transform3D] = []
+	for i in game.arena.windows.size():
+		if not game.arena.is_window_blocked(i):
+			openings.append(game.arena.windows[i])
+	for b in game.arena.barricades:
+		if b.state != Barricade.State.BROKEN:
+			openings.append(b.global_transform)
+	var best := Vector3.INF
+	var best_d := 10.0
+	for xf in openings:
+		var d := me.distance_to(xf.origin)
+		if d < best_d and d < threat.distance_to(xf.origin) - 0.5:
+			var n := xf.basis.z
+			var away_side := signf((xf.origin - threat).dot(n))
+			if away_side == 0.0:
+				away_side = 1.0
+			best = xf.origin + n * away_side * 3.0
+			best_d = d
+	return best
 
 
 ## Picks somewhere to run: far from the Hunter, not past them, preferably behind a wall.
@@ -144,7 +202,7 @@ func _follow_path(delta: float) -> void:
 	var it: Dictionary = game.find_interaction(body)
 	match it.get("kind", ""):
 		"vault_window":
-			if _crosses(game.arena.windows[it.index], me, next, _goal):
+			if _vault_rest <= 0.0 and _crosses(game.arena.windows[it.index], me, next, _goal):
 				game.do_interact(body)
 		"vault_barricade", "break":
 			var b = game.arena.barricades[it.index]
