@@ -4,7 +4,7 @@ A standalone take on the fan-made 1v1 chase mode: one **Hunter** chases one **Ru
 Each match is two rounds and the players swap roles after the first one. Whoever survives
 longer as the Runner wins.
 
-This is an early **prototype**: grey boxes and capsules, no perks, no objectives. It exists
+This is an early **prototype**: grey boxes and blocky low-poly people, no perks, no objectives. It exists
 to find out whether the chase is fun.
 
 ## How to play it
@@ -54,8 +54,10 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 
 The chase copies Dead by Daylight's mechanics as closely as we can (not its art, names or perks).
 
+Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
+
 **Runner**
-- Third person, with the camera over the right shoulder. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
+- Third person, with the camera behind and over the right shoulder so the Runner sits left of center, and an 87° horizontal field of view, like Dead by Daylight. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
 - Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
 - **Window vaults** come in three speeds, as in Dead by Daylight. Sprint straight at a window for at least 2.5 m for a **fast** vault (0.5 s). Sprinting without that run-up, or at an angle, gives a **medium** vault (0.9 s). Walking gives a **slow** one (1.5 s).
 - There's no fixed cooldown between vaults. A fast vault keeps your momentum, so you can chain into another. A medium or slow vault resets it, so you need a fresh 2.5 m run-up before your next fast vault.
@@ -84,6 +86,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/main.gd` | Main menu (bot match, host, join) |
 | `scripts/game.gd` | Rounds, hits, barricades and who wins; the host decides these |
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
+| `scripts/body_model.gd` | The low-poly people and their walk, run, crouch, vault and downed animations |
 | `scripts/arena.gd` | Builds the greybox map |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
 | `scripts/bot.gd` | The computer opponent |

@@ -14,6 +14,9 @@ extends Resource
 ## Speed multiplier for a moment right after the Runner is hit.
 @export var runner_hit_boost_mult := 1.5
 @export var runner_hit_boost_time := 1.8
+## Running into a wall at less than this angle (degrees) slides you along it at full speed.
+## Both the Runner and the Hunter get this.
+@export var wall_slide_max_angle := 45.0
 
 @export_group("Runner vaults")
 ## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast vault needs

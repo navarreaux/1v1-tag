@@ -3,6 +3,7 @@ extends CharacterBody3D
 ## Hunters see in first person; Runners see over the shoulder in third person.
 
 const Greybox := preload("res://scripts/greybox.gd")
+const BodyModel := preload("res://scripts/body_model.gd")
 const TUNING := preload("res://tuning.tres")
 
 enum Role { RUNNER, HUNTER }
@@ -14,14 +15,23 @@ const FLAG_WIPE := 2
 const FLAG_RECOVER := 4
 const FLAG_CROUCH := 8
 const FLAG_SPRINT := 16
+const FLAG_VAULT := 32
+const FLAG_STUN := 64
 
 const GRAVITY := 20.0
+const RUNNER_CAMERA_DISTANCE := 3.0
+const RUNNER_CAMERA_OFFSET := Vector3(0.7, 0.25, 0)  # right and up from the eye point
 const MOUSE_SENSITIVITY := 0.0025
 const RADIUS := 0.35
 const HEIGHT := 1.8
 const CROUCH_HEIGHT := 1.1
 const HUNTER_COLOR := Color(0.55, 0.12, 0.1)
+const HUNTER_PANTS := Color(0.13, 0.1, 0.1)
+const HUNTER_MASK := Color(0.88, 0.86, 0.8)
+const HUNTER_SCALE := 1.12
 const RUNNER_COLOR := Color(0.25, 0.5, 0.9)
+const RUNNER_PANTS := Color(0.22, 0.24, 0.32)
+const RUNNER_SKIN := Color(0.85, 0.68, 0.55)
 const INJURED_COLOR := Color(0.45, 0.3, 0.6)
 const ARM_COLOR := Color(0.25, 0.1, 0.08)
 const BLADE_COLOR := Color(0.7, 0.7, 0.72)
@@ -63,7 +73,7 @@ var yaw := 0.0
 var pitch := 0.0
 
 var _shape: CollisionShape3D
-var _body_mesh: MeshInstance3D
+var _model: BodyModel
 var _rig: Node3D
 var _spring: SpringArm3D
 var _camera: Camera3D
@@ -88,16 +98,6 @@ func _ready() -> void:
 	_shape.position.y = HEIGHT / 2.0
 	add_child(_shape)
 
-	_body_mesh = MeshInstance3D.new()
-	var cm := CapsuleMesh.new()
-	cm.radius = RADIUS
-	cm.height = HEIGHT
-	_body_mesh.mesh = cm
-	_body_mesh.position.y = HEIGHT / 2.0
-	add_child(_body_mesh)
-	# A little visor so you can tell which way the other player is facing.
-	Greybox.box(_body_mesh, Transform3D(Basis(), Vector3(0, 0.5, -0.3)), Vector3(0.4, 0.15, 0.15), Color(0.1, 0.1, 0.1), false)
-
 	if is_human_local():
 		_rig = Node3D.new()
 		_rig.top_level = true
@@ -108,6 +108,8 @@ func _ready() -> void:
 		_spring.margin = 0.2
 		_rig.add_child(_spring)
 		_camera = Camera3D.new()
+		# Dead by Daylight's 87 is a horizontal field of view; Godot measures vertically by default.
+		_camera.keep_aspect = Camera3D.KEEP_WIDTH
 		_camera.fov = 87
 		_spring.add_child(_camera)
 		_camera.current = true
@@ -139,20 +141,15 @@ func set_role(r: Role) -> void:
 	run_up = 0.0
 	_end_chase()
 	_on_busy_done = Callable()
-	_body_mesh.rotation = Vector3.ZERO
-	_body_mesh.position.y = HEIGHT / 2.0
-	_body_mesh.scale = Vector3.ONE
-	_update_color()
+	_build_model()
 	_build_arm()
 	_build_red_stain()
 	if _rig:
 		var hunter := r == Role.HUNTER
-		# Runner camera: behind and over the right shoulder.
-		_spring.spring_length = 0.0 if hunter else 2.4
-		_spring.position = Vector3.ZERO if hunter else Vector3(0.55, 0.15, 0)
-		# Hunters are first person, so hide your own body.
-		_body_mesh.visible = not hunter
-		pitch = 0.0 if hunter else -0.2
+		# Runner camera: behind and over the right shoulder, a bit above head height, like Dead by Daylight.
+		_spring.spring_length = 0.0 if hunter else RUNNER_CAMERA_DISTANCE
+		_spring.position = Vector3.ZERO if hunter else RUNNER_CAMERA_OFFSET
+		pitch = 0.0 if hunter else -0.25
 
 
 func spawn_at(pos: Vector3, facing: float) -> void:
@@ -164,13 +161,27 @@ func spawn_at(pos: Vector3, facing: float) -> void:
 	_net_yaw = facing
 
 
-func _update_color() -> void:
-	var c := RUNNER_COLOR
+## A low-poly person. Hunters are bigger, and their right arm is the weapon arm (see _build_arm).
+func _build_model() -> void:
+	if _model:
+		_model.queue_free()
+	_model = BodyModel.new()
+	add_child(_model)
 	if role == Role.HUNTER:
-		c = HUNTER_COLOR
-	elif injured:
-		c = INJURED_COLOR
-	_body_mesh.material_override = Greybox.material(c)
+		_model.build(ARM_COLOR, HUNTER_COLOR, HUNTER_PANTS, false, HUNTER_MASK)
+		_model.scale = Vector3.ONE * HUNTER_SCALE
+	else:
+		_model.build(RUNNER_SKIN, RUNNER_COLOR, RUNNER_PANTS)
+	# Hunters are first person, so you don't see your own body (its shadow still shows).
+	if role == Role.HUNTER and is_human_local():
+		for m in _model.find_children("*", "MeshInstance3D", true, false):
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_update_color()
+
+
+func _update_color() -> void:
+	if role == Role.RUNNER:
+		_model.set_top_color(INJURED_COLOR if injured else RUNNER_COLOR)
 
 
 ## The Hunter's arm with a blade. It's a pivot at the shoulder; poses rotate it.
@@ -185,10 +196,9 @@ func _build_arm() -> void:
 	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0.02, -0.75)), Vector3(0.03, 0.14, 0.4), BLADE_COLOR, false)
 	if _camera:
 		_camera.add_child(_arm)
-		_arm.position = Vector3(0.28, -0.28, -0.15)
+		_arm.position = Vector3(0.24, -0.19, -0.15)
 	else:
-		add_child(_arm)
-		_arm.position = Vector3(0.38, 1.4, -0.1)
+		_model.right_shoulder.add_child(_arm)
 	for m in _arm.get_children():
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _camera else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
@@ -229,7 +239,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	if _rig:
-		var eye := 1.6 if role == Role.HUNTER else 1.45
+		var eye := 1.85 if role == Role.HUNTER else 1.45
 		if downed:
 			eye = 0.6
 		elif crouching:
@@ -247,10 +257,21 @@ func _process(delta: float) -> void:
 		crouching = _net_flags & FLAG_CROUCH != 0
 		sprinting = _net_flags & FLAG_SPRINT != 0
 		_remote_lunge = _remote_lunge + delta if _net_flags & FLAG_LUNGE else 0.0
-	if not downed and role == Role.RUNNER:
-		_body_mesh.scale.y = lerpf(_body_mesh.scale.y, CROUCH_HEIGHT / HEIGHT if crouching else 1.0, minf(1.0, delta * 12.0))
-		_body_mesh.position.y = HEIGHT * _body_mesh.scale.y / 2.0
+	_model.animate(delta, _pose())
 	_animate_arm(delta)
+
+
+func _pose() -> BodyModel.Pose:
+	var local := is_local()
+	if downed:
+		return BodyModel.Pose.DOWNED
+	if (vaulting if local else _net_flags & FLAG_VAULT != 0):
+		return BodyModel.Pose.VAULT
+	if (stun > 0.0 if local else _net_flags & FLAG_STUN != 0):
+		return BodyModel.Pose.STUNNED
+	if crouching:
+		return BodyModel.Pose.CROUCH
+	return BodyModel.Pose.NORMAL
 
 
 func _physics_process(delta: float) -> void:
@@ -284,6 +305,10 @@ func _flags() -> int:
 		f |= FLAG_CROUCH
 	if sprinting:
 		f |= FLAG_SPRINT
+	if vaulting:
+		f |= FLAG_VAULT
+	if stun > 0.0:
+		f |= FLAG_STUN
 	return f
 
 
@@ -307,6 +332,7 @@ func _move(delta: float) -> void:
 		sprinting = want_sprint and not crouching and input.length() > 0.1
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	var speed := current_speed()
+	dir = _wall_slide(dir, speed * delta)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	if role == Role.HUNTER:
@@ -319,6 +345,28 @@ func _move(delta: float) -> void:
 		run_up += flat_speed * delta
 	else:
 		run_up = 0.0
+
+
+## Like Dead by Daylight: running at a wall at a shallow angle slides you along it at full speed
+## (plain physics would slow you down by how much you push into it). Head-on, you still stop.
+func _wall_slide(dir: Vector3, step: float) -> Vector3:
+	if dir.length() < 0.1 or not is_on_floor():
+		return dir
+	dir = dir.normalized() * minf(dir.length(), 1.0)
+	var hit := KinematicCollision3D.new()
+	if not test_move(global_transform, dir.normalized() * (step + 0.05), hit):
+		return dir
+	if not hit.get_collider() is StaticBody3D:
+		return dir  # only walls, not the other player
+	var n := hit.get_normal()
+	n.y = 0.0
+	if n.length() < 0.5:
+		return dir
+	n = n.normalized()
+	var into := -dir.normalized().dot(n)  # 1 = straight into the wall
+	if into <= 0.0 or into > sin(deg_to_rad(TUNING.wall_slide_max_angle)):
+		return dir
+	return (dir - n * dir.dot(n)).normalized() * dir.length()
 
 
 func _set_crouch(on: bool) -> void:
@@ -422,23 +470,31 @@ func _animate_arm(delta: float) -> void:
 		wipe = _net_flags & FLAG_WIPE != 0
 		recover = _net_flags & FLAG_RECOVER != 0
 	# Rotation (pitch, yaw) in radians. Positive pitch raises the arm.
-	var target := Vector2(-0.35, 0.15)  # idle: held low and forward
+	# In first person the arm sits in front of the camera; on the body it hangs from the shoulder.
+	var fp := _camera != null
+	var target := Vector2(-0.35, 0.15) if fp else Vector2(-1.2 - sin(_model.stride_phase()) * 0.35, 0.1)
 	var speed := 10.0
-	if lunging:
+	if downed:
+		pass
+	elif lunging:
 		# Raise, then slash down and across as the lunge goes on.
 		var k := clampf(lunge_t / TUNING.hunter_lunge_min, 0.0, 1.0)
-		target = Vector2(lerpf(0.9, -0.5, k), lerpf(0.5, -0.6, k))
+		if fp:
+			target = Vector2(lerpf(0.9, -0.5, k), lerpf(0.5, -0.6, k))
+		else:
+			target = Vector2(lerpf(1.8, -0.6, k), lerpf(0.3, -0.5, k))
 		speed = 30.0
 	elif wipe:
-		target = Vector2(-0.9, -0.7)  # wiping the blade
+		target = Vector2(-0.9, -0.7) if fp else Vector2(-0.4, -1.0)  # wiping the blade
 		speed = 6.0
 	elif recover:
-		target = Vector2(-1.0, 0.0)  # swung through and drooping
+		target = Vector2(-1.0, 0.0) if fp else Vector2(-1.5, -0.2)  # swung through and drooping
 		speed = 8.0
 	var w := minf(1.0, delta * speed)
 	_arm.rotation.x = lerpf(_arm.rotation.x, target.x, w)
 	_arm.rotation.y = lerpf(_arm.rotation.y, target.y, w)
-	_arm.position.z = lerpf(_arm.position.z, -0.25 if lunging else -0.1 if not _camera else -0.15, w)
+	if fp:
+		_arm.position.z = lerpf(_arm.position.z, -0.25 if lunging else -0.15, w)
 
 
 # --- Hunter: chase and bloodlust -----------------------------------------
@@ -568,11 +624,7 @@ func on_health_changed(health: int, hurt: bool) -> void:
 	injured = health == 1
 	_update_color()
 	if downed:
-		# Lie down.
-		_set_crouch(false)
-		_body_mesh.scale = Vector3.ONE
-		_body_mesh.rotation.x = PI / 2.0
-		_body_mesh.position.y = RADIUS
+		_set_crouch(false)  # the body model lies down by itself
 	elif hurt and is_local():
 		boost = TUNING.runner_hit_boost_time
 
