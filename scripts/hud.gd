@@ -146,7 +146,7 @@ func _process(delta: float) -> void:
 				_info.text += "   Bloodlust %s" % ["I", "II", "III"][me.bloodlust - 1]
 		if me.stun > 0.0:
 			_prompt.text = "Stunned!"
-		elif me.busy > 0.0 and not me.vaulting:
+		elif me.busy > 0.0 and not me.vaulting and me.role == Role.HUNTER:
 			_prompt.text = "Breaking..."
 		elif me.role == Role.HUNTER and me.cooldown > 0.0:
 			_prompt.text = "Recovering from your swing..."

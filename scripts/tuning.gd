@@ -31,6 +31,13 @@ extends Resource
 ## Barricades only have two speeds: sprinting into one is fast, walking is slow.
 @export var barricade_vault_fast := 1.1
 @export var barricade_vault_slow := 2.0
+## Vaulting the same window or barricade you just vaulted needs this much more run-up
+## (1.5 = 50% more) to be fast. Otherwise it's a medium (window) or slow (barricade) vault.
+@export var revault_runup_mult := 1.5
+## After dropping a barricade the Runner is stuck in place this long (seconds)...
+@export var drop_pause := 0.35
+## ...and can't vault that barricade until this long after the drop.
+@export var drop_vault_lockout := 1.0
 
 @export_group("Window blocking")
 ## After the Runner vaults the same window this many times in a chase, it gets blocked for them.
