@@ -46,7 +46,8 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
 | Space | Knock over a trash can, vault a window, vault a knocked-over trash can (hold Shift to vault fast), kick a trash can away |
-| B (Tile Test) | Bring a bot in at the nearest tile, or send it away |
+| T (Tile Test) | Open or close the tile builder |
+| B (Tile Test) | Bring a bot in, or send it away |
 | F5 (vs bot) | Dev: stand every trash can back up and unblock every window |
 | F6 (vs bot) | Dev: freeze or unfreeze the bot in place |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
@@ -63,7 +64,13 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 
 **The Last Stop** is a compact 80 x 80 m abandoned roadside service station: a 5 x 5 grid of 16 m cells, plus one sticking out on the right. The **service station** fills the middle-top four cells: a fenced forecourt with entrances on the west and south, a pump island under a canopy, a shop with a trash can between it and the fence, and one window in the east fence. Strong long walls sit on opposite edges (B and V), short walls at D, N and T, a shack at F and a trash can loop at R. The rest is filler with weak trash cans, container scrap yards that break sight lines, low drainage curbs in the corners and open escape lanes. The Runner starts inside the station; the Hunter starts in the open lane to the west.
 
-**Tile Test** puts every tile from both maps in one long row, once each, with its name floating above it, so tiles can be compared side by side when designing random tile spawning. Tiles are 24 m apart, so a chase at one stays there. You start alone in whichever role you picked, with no time limit. Press **B** to bring a bot in at the tile you're nearest (the HUD names it), and B again to send it away; walk to another tile and press B to try that one. The Runner can't be downed here: every hit counts (speed burst and all) but leaves them injured, never down. F5 still resets windows and trash cans.
+**Tile Test** is a small 64 x 64 m walled arena with one tile in the middle, for designing tiles (ahead of random tile spawning). You start alone in whichever role you picked, with no time limit, and the Runner can't be downed: every hit counts (speed burst and all) but leaves them injured. Press **B** to bring a bot in on its side of the arena and B again to send it away; F5 resets windows and trash cans; F6 freezes the bot.
+
+Press **T** to open the **tile builder** (it frees the mouse; T again closes it):
+- **Spawn a tile:** pick any of the 18 tiles from both maps (or empty) to replace the one in the middle.
+- **Pieces:** every tile is a list of pieces: walls (any length and height; under 2 m you can see over them), windows, trash cans (each sits in a 3 m gap), containers, blocks, a train car and lamps. Click one to highlight it in yellow and change its position, turn, length, height or size. Add, duplicate or delete pieces.
+- **Spread** moves every piece further apart or closer together without resizing them.
+- **Save** keeps the tile under a name; saved tiles show up at the bottom of the tile menu. **Copy numbers** puts the tile's pieces on the clipboard as text, ready to be built into a map. The panel shows the folder where saved tiles are kept.
 
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
@@ -102,6 +109,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
 | `scripts/body_model.gd` | The cartoony people (outfits, hats, the Runner's backpack) and their walk, run, crouch, vault and downed animations |
 | `scripts/arena.gd` | Builds the map: the grid of cells, the corner depot, tiles, filler |
+| `scripts/tile_builder.gd` | Tile Test's tile builder panel |
 | `scripts/barricade.gd` | One trash can (standing, knocked over, kicked away) |
 | `scripts/bot.gd` | The computer opponent |
 | `scripts/effects.gd` | Scratch marks, blood, noise alerts, heartbeat |

@@ -13,6 +13,7 @@ const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Bot := preload("res://scripts/bot.gd")
+const TileBuilder := preload("res://scripts/tile_builder.gd")
 const Effects := preload("res://scripts/effects.gd")
 const TUNING := preload("res://tuning.tres")
 
@@ -99,6 +100,9 @@ func start_vs_bot(role: Role) -> void:
 	players[BOT_ID].add_child(bot)
 	if solo:
 		bot_frozen = true
+		var builder := TileBuilder.new()
+		builder.game = self
+		hud.add_child(builder)
 	_begin_round(1)
 
 
@@ -162,10 +166,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if vs_bot and event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_F5:
-				_dev_reset_map()
+				dev_reset_map()
 			KEY_B when solo:
-				_toggle_test_bot()
-			KEY_F6 when not solo:
+				toggle_test_bot()
+			KEY_F6 when not solo or test_bot_active:
 				bot_frozen = not bot_frozen
 				hud.flash("Bot frozen" if bot_frozen else "Bot unfrozen")
 
@@ -182,18 +186,17 @@ func _park_test_bot() -> void:
 	test_bot_active = false
 
 
-## Tile Test: bring the bot in at the tile you're nearest (a Runner bot just in front of it, a
-## Hunter bot a little further out), or send it away if it's already here.
-func _toggle_test_bot() -> void:
+## Tile Test: bring the bot in at its side of the arena, or send it away if it's already here.
+func toggle_test_bot() -> void:
 	if test_bot_active:
 		_park_test_bot()
 		hud.flash("Bot removed")
 		return
-	var me = local_player()
-	var tile: Array = arena.test_tiles[arena.nearest_test_tile(me.global_position)]
 	var b = players[BOT_ID]
-	var spot := Vector3(tile[1], 0, 10.0 if b.role == Role.RUNNER else 22.0)
-	b.spawn_at(spot, 0.0)
+	if b.role == Role.RUNNER:
+		b.spawn_at(arena.runner_spawn, arena.runner_spawn_yaw)
+	else:
+		b.spawn_at(arena.hunter_spawn, arena.hunter_spawn_yaw)
 	b.visible = true
 	b.collision_layer = Greybox.PLAYER_LAYER
 	b.collision_mask = Greybox.WORLD_LAYER | Greybox.PLAYER_LAYER
@@ -201,10 +204,17 @@ func _toggle_test_bot() -> void:
 	b.stun = 0.0
 	bot_frozen = false
 	test_bot_active = true
-	hud.flash("Bot spawned at %s" % tile[0])
+	hud.flash("Bot spawned")
 
 
-func _dev_reset_map() -> void:
+## Tile Test: the tile was rebuilt, so forget any trash can or window we were tracking.
+func on_tile_rebuilt() -> void:
+	for p in players.values():
+		p.dropped_barricade = -1
+		p.last_vault = ""
+
+
+func dev_reset_map() -> void:
 	arena.reset()
 	for p in players.values():
 		p.dropped_barricade = -1

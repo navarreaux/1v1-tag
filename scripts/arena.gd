@@ -110,6 +110,15 @@ var _nav: NavigationRegion3D
 ## how far it is around a dropped barricade, to choose between breaking it and running around.
 var nav_blocked_map: RID
 var _wall_color := WALL_COLOR
+## Where building helpers put solid things (part of the walkable-area bake) and looks-only things.
+## Normally the nav region and the arena; Tile Test points both at its tile node.
+var _solid: Node3D
+var _decor: Node3D
+## Tile Test: an Array while recording a preset's pieces (see tile_preset), otherwise null.
+var _record = null
+## Nav links made by the last bake, freed when baking again.
+var _nav_links: Array = []
+var _blocked_region: NavigationRegion3D
 ## Same seed on every computer, so graffiti and container colors match (they're only looks anyway).
 var _rng := RandomNumberGenerator.new()
 
@@ -119,6 +128,8 @@ func _ready() -> void:
 	_rng.seed = 1234
 	_nav = NavigationRegion3D.new()
 	add_child(_nav)
+	_solid = _nav
+	_decor = self
 	if map_id == Map.LAST_STOP:
 		_build_last_stop()
 	elif map_id == Map.TILE_TEST:
@@ -166,81 +177,158 @@ func _outline(outline: Array, center: Vector3, floor_size: Vector2) -> void:
 
 # --- Tile Test -------------------------------------------------------------
 
-## Every tile either map can build, once each, in a row from west to east, with its name floating
-## above it. For looking at tiles side by side and planning random tile spawning.
-## [label, width along the row in m]. The builders are matched by label in _build_tile_test.
-const TEST_TILES := [["T Wall", 16], ["L Window", 13], ["L Trash Can", 13], ["Jungle Gym", 13],
-	["Shack", 14], ["Long Wall", 16], ["Trash Can Loop", 16], ["Bent Wall", 18], ["L Pair", 14],
-	["Train Loop", 28], ["Short Wall", 11], ["Filler Trash Can", 11], ["Container", 7],
-	["Scrap Yard", 12], ["Drainage", 10], ["Lamp", 4], ["Depot", 20], ["Service Station", 32]]
-## Space between neighbouring tiles: wide enough that a chase at one tile stays there.
-const TEST_GAP := 24.0
-## Tile Test: [label, x] of each tile's middle, west to east.
-var test_tiles := []
+## Tile Test is one small walled arena with a single tile in the middle. Every tile is a list of
+## simple pieces (walls, windows, trash cans, containers, blocks, a train car, lamps), so the tile
+## builder panel can spawn any preset, then move, resize, add and remove its pieces live.
+const TEST_SIZE := 64.0
+## Presets in the tile menu, matched by name in tile_preset().
+const TEST_TILES := ["T Wall", "L Window", "L Trash Can", "Jungle Gym", "Shack", "Long Wall",
+	"Trash Can Loop", "Bent Wall", "L Pair", "Train Loop", "Short Wall", "Filler Trash Can",
+	"Container", "Scrap Yard", "Drainage", "Lamp", "Depot", "Service Station"]
+## The tile in the middle of the arena, as pieces: dictionaries with "type", "x", "z", "rot"
+## (degrees) and per-type sizes. See _build_piece().
+var tile_pieces: Array = []
+## Multiplies every piece's position (not its size): spreads a tile out or squeezes it together.
+var tile_spread := 1.0
+var _tile_node: Node3D  # everything the tile builds, so it can be cleared
+var _marker: MeshInstance3D  # highlights the piece being edited
 
 
 func _build_tile_test() -> void:
-	var length := 0.0
-	for t in TEST_TILES:
-		length += t[1] + TEST_GAP
-	length += TEST_GAP
-	var x := -length / 2.0 + TEST_GAP
-	_outline([Vector2(-length / 2.0, -30), Vector2(length / 2.0, -30), Vector2(length / 2.0, 30),
-		Vector2(-length / 2.0, 30)], Vector3.ZERO, Vector2(length + 2, 62))
-	runner_spawn = Vector3(x + 8, 0, 14)
-	runner_spawn_yaw = -PI / 2.0  # facing along the row
-	hunter_spawn = Vector3(x - 2, 0, 24)
-	hunter_spawn_yaw = -PI / 2.0
-	for t in TEST_TILES:
-		var name: String = t[0]
-		var w: float = t[1]
-		var xf := _at(x + w / 2.0, 0, 0)
-		match name:
-			"T Wall": _t_wall(xf)
-			"L Window": _l_window(xf)
-			"L Trash Can": _l_barricade(xf)
-			"Jungle Gym": _jungle_gym(xf)
-			"Shack": _shack(xf)
-			"Long Wall": _long_wall(xf)
-			"Trash Can Loop": _barricade_loop(xf)
-			"Bent Wall": _bent_wall(xf)
-			"L Pair": _l_pair(xf)
-			"Train Loop": _train_loop(_at(x + 11.5, 0, 0))  # the car is off-centre in its tile
-			"Short Wall": _short_wall(xf)
-			"Filler Trash Can": _rock_pallet(xf)
-			"Container": _rock(xf.origin)
-			"Scrap Yard": _scrap_yard(xf)
-			"Drainage": _drainage(xf)
-			"Lamp": _lamp(xf.origin)
-			"Depot": _depot(xf)
-			"Service Station": _service_station(xf)
-		_label(name, Vector3(x + w / 2.0, 7.0, -20.0))
-		test_tiles.append([name, x + w / 2.0])
-		x += w + TEST_GAP
+	var h := TEST_SIZE / 2.0
+	_outline([Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)], Vector3.ZERO,
+		Vector2(TEST_SIZE + 2, TEST_SIZE + 2))
+	runner_spawn = Vector3(0, 0, h - 6)
+	runner_spawn_yaw = 0.0  # facing the middle
+	hunter_spawn = Vector3(0, 0, -h + 6)
+	hunter_spawn_yaw = PI
+	_tile_node = Node3D.new()
+	_nav.add_child(_tile_node)
+	_marker = MeshInstance3D.new()
+	_marker.mesh = BoxMesh.new()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 0.9, 0.1, 0.35)
+	mat.no_depth_test = true
+	_marker.material_override = mat
+	_marker.visible = false
+	add_child(_marker)
+	tile_pieces = tile_preset("T Wall")
+	rebuild_tile(false)  # _ready bakes the navigation right after
 
 
-## Tile Test: index of the tile nearest `pos` (by distance along the row).
-func nearest_test_tile(pos: Vector3) -> int:
-	var best := 0
-	for i in test_tiles.size():
-		if absf(test_tiles[i][1] - pos.x) < absf(test_tiles[best][1] - pos.x):
-			best = i
-	return best
+## The pieces of a preset tile, centred on the arena.
+func tile_preset(name: String) -> Array:
+	_record = []
+	var o := Transform3D.IDENTITY
+	match name:
+		"T Wall": _t_wall(o)
+		"L Window": _l_window(o)
+		"L Trash Can": _l_barricade(o)
+		"Jungle Gym": _jungle_gym(o)
+		"Shack": _shack(o)
+		"Long Wall": _long_wall(o)
+		"Trash Can Loop": _barricade_loop(o)
+		"Bent Wall": _bent_wall(o)
+		"L Pair": _l_pair(o)
+		"Train Loop": _train_loop(_at(-1.75, 0, 0))  # the car is off-centre in its tile
+		"Short Wall": _short_wall(o)
+		"Filler Trash Can": _rock_pallet(o)
+		"Container": _container(o, 5.5)
+		"Scrap Yard": _scrap_yard(o)
+		"Drainage": _drainage(o)
+		"Lamp": _lamp(Vector3.ZERO)
+		"Depot": _depot(o)
+		"Service Station": _service_station(o)
+	var pieces: Array = _record
+	_record = null
+	return pieces
 
 
-## A big floating name that always faces the camera.
-func _label(text: String, pos: Vector3) -> void:
-	var l := Label3D.new()
-	l.text = text
-	l.position = pos
-	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.pixel_size = 0.02
-	l.font_size = 96
-	l.outline_size = 24
-	l.modulate = Color.WHITE
-	l.outline_modulate = Color(0.1, 0.1, 0.15)
-	l.no_depth_test = true
-	add_child(l)
+## Clears the tile and builds tile_pieces again. Bake = also redo the bot's walkable-area maps
+## (slower; the builder waits until you stop dragging).
+func rebuild_tile(bake := true) -> void:
+	for b in barricades:
+		b.free()
+	barricades.clear()
+	windows.clear()
+	window_vaults.clear()
+	window_blocked.clear()
+	window_since.clear()
+	_window_blockers.clear()
+	for c in _tile_node.get_children():
+		c.free()
+	_rng.seed = 99  # same container colors every rebuild
+	_solid = _tile_node
+	_decor = _tile_node
+	for piece in tile_pieces:
+		_build_piece(piece)
+	_solid = _nav
+	_decor = self
+	if bake:
+		_bake_navigation()
+
+
+## The pieces as they'd be saved: with the spread worked into their positions.
+func tile_pieces_spread() -> Array:
+	var out := []
+	for piece in tile_pieces:
+		var q: Dictionary = piece.duplicate()
+		q.x = snappedf(q.x * tile_spread, 0.01)
+		q.z = snappedf(q.z * tile_spread, 0.01)
+		out.append(q)
+	return out
+
+
+## Highlights one piece (or nothing, for null) with a see-through yellow box.
+func show_marker(piece) -> void:
+	if piece == null:
+		_marker.visible = false
+		return
+	var size := Vector3(1, 1, 1)
+	var lift := 0.0
+	match piece.type:
+		"wall": size = Vector3(piece.length, piece.get("height", WALL_H), WALL_T)
+		"window": size = Vector3(WINDOW_W, WALL_H, WALL_T)
+		"can": size = Vector3(Barricade.GAP_WIDTH, 1.8, 0.8)
+		"container": size = Vector3(piece.length, 2.4, 1.4)
+		"train": size = Vector3(14, 3.5, 3)
+		"lamp": size = Vector3(0.4, 4.5, 0.4)
+		"block":
+			size = Vector3(piece.sx, piece.sy, piece.sz)
+			lift = piece.get("y", 0.0)
+	(_marker.mesh as BoxMesh).size = size + Vector3(0.2, 0.2, 0.2)
+	_marker.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(piece.get("rot", 0.0))),
+		Vector3(piece.x * tile_spread, lift + size.y / 2.0, piece.z * tile_spread))
+	_marker.visible = true
+
+
+## Builds one piece (see tile_pieces).
+func _build_piece(piece: Dictionary) -> void:
+	var xf := Transform3D(Basis(Vector3.UP, deg_to_rad(piece.get("rot", 0.0))),
+		Vector3(piece.x * tile_spread, 0, piece.z * tile_spread))
+	match piece.type:
+		"wall":
+			_wall_color = Color.html(piece.get("color", WALL_COLOR.to_html(false)))
+			_wall(xf, piece.length, piece.get("height", WALL_H))
+			_wall_color = WALL_COLOR
+		"window": _window(xf, 0, 0)
+		"can": _barricade(xf, 0, 0)
+		"container": _container(xf, piece.length)
+		"lamp": _lamp(xf.origin)
+		"train": _train(xf)
+		"block":
+			_block(xf.translated(Vector3(0, piece.get("y", 0.0), 0)), Vector3(piece.sx, piece.sy, piece.sz),
+				Color.html(piece.get("color", "8090a8")), piece.get("solid", true))
+
+
+## While a preset is being recorded, the building helpers below add a piece here instead of building.
+func _rec(type: String, xf: Transform3D, extra := {}) -> void:
+	var piece := {"type": type, "x": snappedf(xf.origin.x, 0.01), "z": snappedf(xf.origin.z, 0.01),
+		"rot": snappedf(rad_to_deg(xf.basis.get_euler().y), 0.1)}
+	piece.merge(extra)
+	_record.append(piece)
 
 
 # --- The Last Stop ---------------------------------------------------------
@@ -302,21 +390,23 @@ func _service_station(tile: Transform3D) -> void:
 	_wall_color = MAIN_COLOR
 	var gap_x := h - WALL_T / 2.0 - GAP
 	var shop_x1 := gap_x - GAP
-	var shop := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(shop_x1 - 4.5, 1.6, -10)), Vector3(9, 3.2, 7), MAIN_COLOR)
-	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 1.9, 0)), Vector3(9.4, 0.4, 7.4), MAIN_COLOR.darkened(0.3), false)
-	Greybox.box(shop, Transform3D(Basis(), Vector3(-1, 0.2, 3.52)), Vector3(4, 1.2, 0.05), WINDOW_COLOR, false)
-	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 2.4, 3.5)), Vector3(5, 0.7, 0.2), PAINT[3], false)
+	var shop := _block(tile * Transform3D(Basis(), Vector3(shop_x1 - 4.5, 0, -10)), Vector3(9, 3.2, 7), MAIN_COLOR)
+	if shop:
+		Greybox.box(shop, Transform3D(Basis(), Vector3(0, 1.9, 0)), Vector3(9.4, 0.4, 7.4), MAIN_COLOR.darkened(0.3), false)
+		Greybox.box(shop, Transform3D(Basis(), Vector3(-1, 0.2, 3.52)), Vector3(4, 1.2, 0.05), WINDOW_COLOR, false)
+		Greybox.box(shop, Transform3D(Basis(), Vector3(0, 2.4, 3.5)), Vector3(5, 0.7, 0.2), PAINT[3], false)
 	_wall_color = WALL_COLOR
 	_barricade(tile, gap_x, -10, 90)
 	# Pump island: low and solid (you can see over it), with pumps on top, under a canopy.
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 0.5, 2)), Vector3(10, 1.0, 2.4), Color(0.75, 0.75, 0.72))
+	_block(tile * Transform3D(Basis(), Vector3(0, 0, 2)), Vector3(10, 1.0, 2.4), Color(0.75, 0.75, 0.72))
 	for x in [-3.0, 3.0]:
-		var pump := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, 1.8, 2)), Vector3(0.9, 1.6, 0.6), Color(0.9, 0.2, 0.2))
-		Greybox.box(pump, Transform3D(Basis(), Vector3(0, 0.3, 0.31)), Vector3(0.6, 0.4, 0.02), Color(0.15, 0.2, 0.3), false)
+		var pump := _block(tile * Transform3D(Basis(), Vector3(x, 1.0, 2)), Vector3(0.9, 1.6, 0.6), Color(0.9, 0.2, 0.2))
+		if pump:
+			Greybox.box(pump, Transform3D(Basis(), Vector3(0, 0.3, 0.31)), Vector3(0.6, 0.4, 0.02), Color(0.15, 0.2, 0.3), false)
 	for p in [Vector3(-7, 0, -2), Vector3(7, 0, -2), Vector3(-7, 0, 6), Vector3(7, 0, 6)]:
-		Greybox.box(_nav, tile * Transform3D(Basis(), p + Vector3(0, 2.4, 0)), Vector3(0.5, 4.8, 0.5), POLE_COLOR)
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 5.0, 2)), Vector3(17, 0.5, 11), Color(0.95, 0.95, 0.95), false)
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 5.0, 2)), Vector3(17.1, 0.25, 11.1), PAINT[0], false)
+		_block(tile * Transform3D(Basis(), p), Vector3(0.5, 4.8, 0.5), POLE_COLOR)
+	_block(tile * Transform3D(Basis(), Vector3(0, 4.75, 2)), Vector3(17, 0.5, 11), Color(0.95, 0.95, 0.95), false)
+	_block(tile * Transform3D(Basis(), Vector3(0, 4.875, 2)), Vector3(17.1, 0.25, 11.1), PAINT[0], false)
 
 
 ## A medium loop: a 6 m wall with a window, a trash can gap, then a short post, with a short
@@ -341,14 +431,18 @@ func _scrap_yard(tile: Transform3D) -> void:
 ## Drainage: two low concrete curbs along a dry channel. Low cover: you see over them but run around.
 func _drainage(tile: Transform3D) -> void:
 	for z in [-1.6, 1.6]:
-		Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 0.3, z)), Vector3(9, 0.6, 0.6), WALL_COLOR.darkened(0.15))
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 0.02, 0)), Vector3(9, 0.04, 2.6), Color(0.3, 0.33, 0.36), false)
+		_block(tile * Transform3D(Basis(), Vector3(0, 0, z)), Vector3(9, 0.6, 0.6), WALL_COLOR.darkened(0.15))
+	_block(tile, Vector3(9, 0.04, 2.6), Color(0.3, 0.33, 0.36), false)
 
 
 # --- Rotten Fields tiles (also used by The Last Stop) -----------------------
 
 
 func _bake_navigation() -> void:
+	for link in _nav_links:
+		link.free()
+	_nav_links.clear()
+	loop_spots.clear()
 	var nm := NavigationMesh.new()
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nm.geometry_collision_mask = Greybox.WORLD_LAYER
@@ -367,6 +461,7 @@ func _bake_navigation() -> void:
 		link.travel_cost = 3.0
 		link.navigation_layers = 2  # so a bot can choose to ignore windows
 		_nav.add_child(link)
+		_nav_links.append(link)
 	_bake_blocked_map(nm)
 	for xf in windows:
 		loop_spots.append(xf.origin + xf.basis.z * 2.0)
@@ -377,13 +472,15 @@ func _bake_navigation() -> void:
 
 
 func _bake_blocked_map(main_mesh: NavigationMesh) -> void:
-	nav_blocked_map = NavigationServer3D.map_create()
-	NavigationServer3D.map_set_cell_size(nav_blocked_map, main_mesh.cell_size)
-	NavigationServer3D.map_set_cell_height(nav_blocked_map, main_mesh.cell_height)
-	NavigationServer3D.map_set_active(nav_blocked_map, true)
-	var region := NavigationRegion3D.new()
-	add_child(region)
-	region.set_navigation_map(nav_blocked_map)
+	if not nav_blocked_map.is_valid():
+		nav_blocked_map = NavigationServer3D.map_create()
+		NavigationServer3D.map_set_cell_size(nav_blocked_map, main_mesh.cell_size)
+		NavigationServer3D.map_set_cell_height(nav_blocked_map, main_mesh.cell_height)
+		NavigationServer3D.map_set_active(nav_blocked_map, true)
+		_blocked_region = NavigationRegion3D.new()
+		add_child(_blocked_region)
+		_blocked_region.set_navigation_map(nav_blocked_map)
+	var region := _blocked_region
 	var nm: NavigationMesh = main_mesh.duplicate()
 	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nm.geometry_source_group_name = &"nav_blocked"
@@ -403,6 +500,7 @@ func _bake_blocked_map(main_mesh: NavigationMesh) -> void:
 		link.navigation_layers = 2
 		region.add_child(link)
 		link.set_navigation_map(nav_blocked_map)
+		_nav_links.append(link)
 
 
 func _exit_tree() -> void:
@@ -450,23 +548,29 @@ func _at(x: float, z: float, degrees: float) -> Transform3D:
 
 ## A straight wall in tile space, running along X from x0 to x1 at depth z.
 func _wall_x(tile: Transform3D, x0: float, x1: float, z: float) -> void:
-	var xf := tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z))
-	Greybox.box(_nav, xf, Vector3(x1 - x0, WALL_H, WALL_T), _wall_color)
-	_trim(xf, x1 - x0)
-	_graffiti(xf, x1 - x0)
+	_wall(tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, 0, z)), x1 - x0)
 
 
 ## A straight wall in tile space, running along Z from z0 to z1 at x.
 func _wall_z(tile: Transform3D, z0: float, z1: float, x: float) -> void:
-	var xf := tile * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0))
-	Greybox.box(_nav, xf, Vector3(z1 - z0, WALL_H, WALL_T), _wall_color)
-	_trim(xf, z1 - z0)
-	_graffiti(xf, z1 - z0)
+	_wall(tile * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, 0, (z0 + z1) / 2.0)), z1 - z0)
+
+
+## A wall `length` long along local X, standing on the ground at `xf`.
+func _wall(xf: Transform3D, length: float, height := WALL_H) -> void:
+	if _record != null:
+		_rec("wall", xf, {"length": snappedf(length, 0.01), "height": height, "color": _wall_color.to_html(false)})
+		return
+	var mid := xf * Transform3D(Basis(), Vector3(0, height / 2.0, 0))
+	Greybox.box(_solid, mid, Vector3(length, height, WALL_T), _wall_color)
+	_trim(mid, length, height)
+	if height >= 2.0:
+		_graffiti(mid, length)
 
 
 ## A darker cap along the top of a wall, so walls look finished rather than like plain blocks.
-func _trim(xf: Transform3D, length: float) -> void:
-	Greybox.box(self, xf * Transform3D(Basis(), Vector3(0, WALL_H / 2.0, 0)), Vector3(length + 0.06, 0.14, WALL_T + 0.12), _wall_color.darkened(0.3), false)
+func _trim(xf: Transform3D, length: float, height := WALL_H) -> void:
+	Greybox.box(_decor, xf * Transform3D(Basis(), Vector3(0, height / 2.0, 0)), Vector3(length + 0.06, 0.14, WALL_T + 0.12), _wall_color.darkened(0.3), false)
 
 
 ## Splashes of spray paint on both faces of a wall segment `length` long (`xf` is its middle).
@@ -479,23 +583,26 @@ func _graffiti(xf: Transform3D, length: float) -> void:
 		var x := _rng.randf_range(-(length - w) / 2.0, (length - w) / 2.0)
 		var y := _rng.randf_range(-0.6, 0.5)
 		var c: Color = PAINT[_rng.randi() % PAINT.size()]
-		Greybox.box(self, xf * Transform3D(Basis(), Vector3(x, y, 0)), Vector3(w, h, WALL_T + 0.02), c, false)
+		Greybox.box(_decor, xf * Transform3D(Basis(), Vector3(x, y, 0)), Vector3(w, h, WALL_T + 0.02), c, false)
 		# A smaller tag in another color on top.
 		var c2: Color = PAINT[_rng.randi() % PAINT.size()]
-		Greybox.box(self, xf * Transform3D(Basis(), Vector3(x + w * 0.15, y + h * 0.1, 0)), Vector3(w * 0.5, h * 0.4, WALL_T + 0.04), c2, false)
+		Greybox.box(_decor, xf * Transform3D(Basis(), Vector3(x + w * 0.15, y + h * 0.1, 0)), Vector3(w * 0.5, h * 0.4, WALL_T + 0.04), c2, false)
 
 
 ## A window opening centered at x along a wall at depth z (sill below, lintel above).
 func _window(tile: Transform3D, x: float, z: float) -> void:
+	if _record != null:
+		_rec("window", tile * Transform3D(Basis(), Vector3(x, 0, z)))
+		return
 	var size_sill := Vector3(WINDOW_W, SILL_H, WALL_T)
 	var size_top := Vector3(WINDOW_W, WALL_H - LINTEL_Y, WALL_T)
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, SILL_H / 2.0, z)), size_sill, WINDOW_COLOR)
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, (LINTEL_Y + WALL_H) / 2.0, z)), size_top, WINDOW_COLOR)
+	Greybox.box(_solid, tile * Transform3D(Basis(), Vector3(x, SILL_H / 2.0, z)), size_sill, WINDOW_COLOR)
+	Greybox.box(_solid, tile * Transform3D(Basis(), Vector3(x, (LINTEL_Y + WALL_H) / 2.0, z)), size_top, WINDOW_COLOR)
 	windows.append(tile * Transform3D(Basis(), Vector3(x, 0, z)))
 	window_vaults.append(0)
 	window_blocked.append(0.0)
 	window_since.append(0.0)
-	var blocker := Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, (SILL_H + LINTEL_Y) / 2.0, z)), Vector3(WINDOW_W, LINTEL_Y - SILL_H, 0.05), Color(0.8, 0.1, 0.1), false)
+	var blocker := Greybox.box(_decor, tile * Transform3D(Basis(), Vector3(x, (SILL_H + LINTEL_Y) / 2.0, z)), Vector3(WINDOW_W, LINTEL_Y - SILL_H, 0.05), Color(0.8, 0.1, 0.1), false)
 	blocker.visible = false
 	_window_blockers.append(blocker)
 
@@ -507,6 +614,9 @@ func _window_z(tile: Transform3D, z: float, x: float) -> void:
 
 ## A trash can standing in a gap (Barricade.GAP_WIDTH wide) centered at (x, z). At 0 degrees the gap runs along X.
 func _barricade(tile: Transform3D, x: float, z: float, degrees := 0.0) -> void:
+	if _record != null:
+		_rec("can", tile * Transform3D(Basis(Vector3.UP, deg_to_rad(degrees)), Vector3(x, 0, z)))
+		return
 	var b := Barricade.new()
 	b.transform = tile * Transform3D(Basis(Vector3.UP, deg_to_rad(degrees)), Vector3(x, 0, z))
 	add_child(b)
@@ -520,8 +630,11 @@ func _rock(pos: Vector3) -> void:
 
 ## A container `length` m long along X, 1.4 m wide, painted a random bright color with dark ribs.
 func _container(xf: Transform3D, length: float) -> void:
+	if _record != null:
+		_rec("container", xf, {"length": length})
+		return
 	var c: Color = PAINT[_rng.randi() % PAINT.size()]
-	var body := Greybox.box(_nav, xf * Transform3D(Basis(), Vector3(0, 1.2, 0)), Vector3(length, 2.4, 1.4), c)
+	var body := Greybox.box(_solid, xf * Transform3D(Basis(), Vector3(0, 1.2, 0)), Vector3(length, 2.4, 1.4), c)
 	var x := -length / 2.0 + 0.4
 	while x < length / 2.0 - 0.2:
 		Greybox.box(body, Transform3D(Basis(), Vector3(x, 0, 0)), Vector3(0.12, 2.3, 1.44), c.darkened(0.3), false)
@@ -529,11 +642,24 @@ func _container(xf: Transform3D, length: float) -> void:
 	Greybox.box(body, Transform3D(Basis(), Vector3(0, 1.17, 0)), Vector3(length + 0.04, 0.1, 1.44), c.darkened(0.45), false)
 
 
+## A plain box `size` big, its bottom at `xf` (so xf's height lifts it off the ground). Solid boxes
+## block movement; others are looks only. Returns the box, or null while recording a preset.
+func _block(xf: Transform3D, size: Vector3, color: Color, solid := true) -> Node3D:
+	if _record != null:
+		_rec("block", xf, {"y": snappedf(xf.origin.y, 0.01), "sx": size.x, "sy": size.y, "sz": size.z,
+			"color": color.to_html(false), "solid": solid})
+		return null
+	return Greybox.box(_solid if solid else _decor, xf * Transform3D(Basis(), Vector3(0, size.y / 2.0, 0)), size, color, solid)
+
+
 ## A street lamp: a thin pole with a glowing head.
 func _lamp(pos: Vector3) -> void:
-	Greybox.box(_nav, Transform3D(Basis(), pos + Vector3(0, 2.25, 0)), Vector3(0.25, 4.5, 0.25), POLE_COLOR)
-	Greybox.box(self, Transform3D(Basis(), pos + Vector3(0, 4.5, -0.3)), Vector3(0.3, 0.15, 0.8), POLE_COLOR, false)
-	var head := Greybox.box(self, Transform3D(Basis(), pos + Vector3(0, 4.4, -0.55)), Vector3(0.35, 0.1, 0.35), LAMP_COLOR, false)
+	if _record != null:
+		_rec("lamp", Transform3D(Basis(), pos))
+		return
+	Greybox.box(_solid, Transform3D(Basis(), pos + Vector3(0, 2.25, 0)), Vector3(0.25, 4.5, 0.25), POLE_COLOR)
+	Greybox.box(_decor, Transform3D(Basis(), pos + Vector3(0, 4.5, -0.3)), Vector3(0.3, 0.15, 0.8), POLE_COLOR, false)
+	var head := Greybox.box(_decor, Transform3D(Basis(), pos + Vector3(0, 4.4, -0.55)), Vector3(0.35, 0.1, 0.35), LAMP_COLOR, false)
 	head.material_override = head.material_override.duplicate()
 	head.material_override.emission_enabled = true
 	head.material_override.emission = LAMP_COLOR
@@ -541,13 +667,16 @@ func _lamp(pos: Vector3) -> void:
 
 ## A parked train car on a short stretch of track. Too tall to vault; you run around it.
 func _train(tile: Transform3D) -> void:
+	if _record != null:
+		_rec("train", tile)
+		return
 	# Track: two rails on sleepers, flat on the ground (just looks).
 	for x in range(-11, 12, 1):
-		Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, 0.03, 0)), Vector3(0.25, 0.06, 2.6), SLEEPER_COLOR, false)
+		Greybox.box(_decor, tile * Transform3D(Basis(), Vector3(x, 0.03, 0)), Vector3(0.25, 0.06, 2.6), SLEEPER_COLOR, false)
 	for z in [-0.75, 0.75]:
-		Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 0.09, z)), Vector3(23, 0.08, 0.1), RAIL_COLOR, false)
+		Greybox.box(_decor, tile * Transform3D(Basis(), Vector3(0, 0.09, z)), Vector3(23, 0.08, 0.1), RAIL_COLOR, false)
 	var c: Color = PAINT[_rng.randi() % PAINT.size()]
-	var car := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 1.75, 0)), Vector3(14, 3.5, 3.0), Color(0.92, 0.92, 0.94))
+	var car := Greybox.box(_solid, tile * Transform3D(Basis(), Vector3(0, 1.75, 0)), Vector3(14, 3.5, 3.0), Color(0.92, 0.92, 0.94))
 	Greybox.box(car, Transform3D(Basis(), Vector3(0, -0.8, 0)), Vector3(14.02, 0.5, 3.02), c, false)
 	Greybox.box(car, Transform3D(Basis(), Vector3(0, 0.55, 0)), Vector3(13.4, 0.8, 3.02), Color(0.15, 0.2, 0.3), false)
 	Greybox.box(car, Transform3D(Basis(), Vector3(0, 1.8, 0)), Vector3(13.8, 0.12, 2.8), Color(0.6, 0.62, 0.66), false)
@@ -588,7 +717,7 @@ func _depot(tile: Transform3D) -> void:
 	_window_z(tile, 0, 9)
 	_wall_z(tile, w, 4.5 - e, 9)
 	# The long solid middle block.
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, WALL_H / 2.0, 0)), Vector3(11, WALL_H, 2.5), MAIN_COLOR.darkened(0.15))
+	_block(tile, Vector3(11, WALL_H, 2.5), MAIN_COLOR.darkened(0.15))
 	# The barricade across the west corridor, between the outer wall and the block.
 	_wall_x(tile, -9 + e, -7.25 - GAP, 0)
 	_barricade(tile, -7.25, 0)
