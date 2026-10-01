@@ -1,5 +1,5 @@
 extends Node3D
-## A blocky, cartoony person built from boxes, with a simple procedural walk/run cycle.
+## A cartoony person built from rounded shapes, with a simple procedural walk/run cycle.
 ## Feet are at y = 0 and the model faces -Z. Joints are pivots (Node3D) that `animate` rotates.
 ## A limb hangs straight down at rotation 0; a positive X rotation swings it forward.
 
@@ -44,67 +44,70 @@ func build(o: Dictionary, has_right_arm := true) -> void:
 	var shoes: Color = o.get("shoes", bottom.darkened(0.5))
 	var black := Color(0.06, 0.06, 0.07)
 	var gold := Color(1.0, 0.8, 0.2)
+	const BALL := Greybox.Shape.BALL
+	const PILL := Greybox.Shape.PILL
+	const ROD := Greybox.Shape.ROD
 
 	hips = _pivot(self, Vector3(0, HIP_HEIGHT, 0))
-	_part("bottom", hips, Vector3(0, 0.04, 0), Vector3(0.36, 0.16, 0.22), bottom)
+	_part("bottom", hips, Vector3(0, 0.04, 0), Vector3(0.38, 0.22, 0.24), bottom, BALL)
 	if o.has("belt"):
-		_part("belt", hips, Vector3(0, 0.11, 0), Vector3(0.38, 0.06, 0.24), o.belt)
-		_part("belt", hips, Vector3(0, 0.11, -0.125), Vector3(0.08, 0.05, 0.01), gold)
+		_part("belt", hips, Vector3(0, 0.11, 0), Vector3(0.4, 0.06, 0.26), o.belt, ROD)
+		_part("belt", hips, Vector3(0, 0.11, -0.13), Vector3(0.08, 0.05, 0.02), gold)
 	torso = _pivot(hips, Vector3(0, 0.08, 0))
-	_part("top", torso, Vector3(0, TORSO / 2.0, 0), Vector3(0.42, TORSO, 0.24), top)
+	_part("top", torso, Vector3(0, TORSO / 2.0, 0), Vector3(0.44, TORSO + 0.06, 0.27), top, PILL)
 	if o.get("hood", false):
-		_part("top", torso, Vector3(0, TORSO, 0.09), Vector3(0.32, 0.1, 0.12), top)
+		_part("top", torso, Vector3(0, TORSO - 0.02, 0.1), Vector3(0.34, 0.14, 0.16), top, BALL)
 	if o.has("backpack"):
-		_part("backpack", torso, Vector3(0, TORSO * 0.5, 0.18), Vector3(0.32, 0.34, 0.13), o.backpack)
+		_part("backpack", torso, Vector3(0, TORSO * 0.5, 0.18), Vector3(0.32, 0.36, 0.16), o.backpack, PILL)
 	if o.get("badge", false):
-		_part("badge", torso, Vector3(-0.11, TORSO * 0.75, -0.125), Vector3(0.07, 0.08, 0.01), gold)
+		_part("badge", torso, Vector3(-0.1, TORSO * 0.72, -0.135), Vector3(0.07, 0.08, 0.02), gold, BALL)
 
-	# A big cartoon head.
+	# A big, round cartoon head.
 	head = _pivot(torso, Vector3(0, TORSO + 0.02, 0))
-	_part("skin", head, Vector3(0, 0.03, 0), Vector3(0.12, 0.08, 0.12), skin)  # neck
-	_part("skin", head, Vector3(0, 0.2, 0), Vector3(0.3, 0.3, 0.28), skin)
+	_part("skin", head, Vector3(0, 0.04, 0), Vector3(0.12, 0.1, 0.12), skin, ROD)  # neck
+	_part("skin", head, Vector3(0, 0.21, 0), Vector3(0.34, 0.33, 0.32), skin, BALL)
+	_part("skin", head, Vector3(0, 0.19, -0.16), Vector3(0.06, 0.06, 0.05), skin.darkened(0.08), BALL)  # nose
 	if o.get("shades", false):
-		_part("eyes", head, Vector3(0, 0.22, -0.143), Vector3(0.25, 0.07, 0.01), black)
+		_part("eyes", head, Vector3(0, 0.25, -0.15), Vector3(0.27, 0.07, 0.04), black, PILL)
 	else:
-		for x in [-0.065, 0.065]:
-			_part("eyes", head, Vector3(x, 0.22, -0.142), Vector3(0.07, 0.08, 0.01), Color.WHITE)
-			_part("eyes", head, Vector3(x, 0.21, -0.148), Vector3(0.035, 0.05, 0.01), black)
+		for x in [-0.07, 0.07]:
+			_part("eyes", head, Vector3(x, 0.25, -0.145), Vector3(0.08, 0.1, 0.03), Color.WHITE, BALL)
+			_part("eyes", head, Vector3(x, 0.24, -0.16), Vector3(0.04, 0.055, 0.02), black, BALL)
 	if o.has("hair"):
-		_part("hair", head, Vector3(0, 0.34, 0.01), Vector3(0.31, 0.06, 0.29), o.hair)
-		_part("hair", head, Vector3(0, 0.24, 0.135), Vector3(0.31, 0.22, 0.03), o.hair)
+		_part("hair", head, Vector3(0, 0.3, 0.03), Vector3(0.36, 0.22, 0.33), o.hair, BALL)
 	match o.get("hat", ""):
 		"cap_back":  # a cap worn backwards
-			_part("hat", head, Vector3(0, 0.38, 0.0), Vector3(0.32, 0.08, 0.3), o.hat_color)
-			_part("hat", head, Vector3(0, 0.35, 0.2), Vector3(0.26, 0.03, 0.14), o.hat_color.darkened(0.25))
+			_part("hat", head, Vector3(0, 0.33, 0.0), Vector3(0.36, 0.2, 0.34), o.hat_color, BALL)
+			_part("hat", head, Vector3(0, 0.33, 0.2), Vector3(0.24, 0.03, 0.16), o.hat_color.darkened(0.25), ROD)
 		"police":
-			_part("hat", head, Vector3(0, 0.41, 0), Vector3(0.34, 0.1, 0.32), o.hat_color)
-			_part("hat", head, Vector3(0, 0.355, 0), Vector3(0.33, 0.04, 0.31), black)
-			_part("hat", head, Vector3(0, 0.345, -0.19), Vector3(0.3, 0.03, 0.12), black)
-			_part("hat", head, Vector3(0, 0.41, -0.165), Vector3(0.06, 0.06, 0.01), gold)
+			_part("hat", head, Vector3(0, 0.36, 0), Vector3(0.36, 0.06, 0.34), black, ROD)
+			_part("hat", head, Vector3(0, 0.43, 0), Vector3(0.42, 0.1, 0.4), o.hat_color, ROD)
+			_part("hat", head, Vector3(0, 0.345, -0.18), Vector3(0.28, 0.03, 0.14), black, ROD)
+			_part("hat", head, Vector3(0, 0.41, -0.2), Vector3(0.06, 0.06, 0.02), gold, BALL)
 
 	for side in [-1.0, 1.0]:
 		var thigh := _pivot(hips, Vector3(0.1 * side, 0, 0))
-		_part("bottom", thigh, Vector3(0, -THIGH / 2.0, 0), Vector3(0.15, THIGH, 0.17), bottom)
+		_part("bottom", thigh, Vector3(0, -THIGH / 2.0, 0), Vector3(0.16, THIGH + 0.06, 0.17), bottom, PILL)
 		var knee := _pivot(thigh, Vector3(0, -THIGH, 0))
-		_part("bottom", knee, Vector3(0, -SHIN / 2.0 + 0.02, 0), Vector3(0.13, SHIN - 0.04, 0.15), bottom)
-		# Chunky shoes.
-		_part("shoes", knee, Vector3(0, -SHIN + 0.06, -0.05), Vector3(0.16, 0.1, 0.28), shoes)
+		_part("bottom", knee, Vector3(0, -SHIN / 2.0 + 0.04, 0), Vector3(0.14, SHIN, 0.15), bottom, PILL)
+		# Big, chunky sneakers.
+		_part("shoes", knee, Vector3(0, -SHIN + 0.07, -0.05), Vector3(0.18, 0.14, 0.32), shoes, BALL)
 		if o.has("shoe_trim"):
-			_part("shoes", knee, Vector3(0, -SHIN + 0.02, -0.05), Vector3(0.165, 0.035, 0.285), o.shoe_trim)
+			_part("shoes", knee, Vector3(0, -SHIN + 0.03, -0.05), Vector3(0.19, 0.04, 0.33), o.shoe_trim, PILL)
 		legs.append(thigh)
 		knees.append(knee)
 
-		var shoulder := _pivot(torso, Vector3(0.28 * side, SHOULDER_HEIGHT, 0))
+		var shoulder := _pivot(torso, Vector3(0.27 * side, SHOULDER_HEIGHT, 0))
 		arms.append(shoulder)
 		if side > 0.0:
 			right_shoulder = shoulder
 			if not has_right_arm:
 				elbows.append(null)
 				continue
-		_part("top", shoulder, Vector3(0, -UPPER_ARM / 2.0 + 0.04, 0), Vector3(0.12, UPPER_ARM, 0.13), top)
+		_part("top", shoulder, Vector3(0, -UPPER_ARM / 2.0 + 0.04, 0), Vector3(0.13, UPPER_ARM + 0.06, 0.13), top, PILL)
 		var elbow := _pivot(shoulder, Vector3(0, -UPPER_ARM + 0.04, 0))
-		_part("sleeve", elbow, Vector3(0, -(FOREARM - 0.08) / 2.0, 0), Vector3(0.11, FOREARM - 0.08, 0.12), sleeve)
-		_part("skin", elbow, Vector3(0, -FOREARM + 0.03, 0), Vector3(0.1, 0.1, 0.11), skin)
+		_part("sleeve", elbow, Vector3(0, -(FOREARM - 0.06) / 2.0, 0), Vector3(0.12, FOREARM, 0.12), sleeve, PILL)
+		_part("skin", elbow, Vector3(0, -FOREARM + 0.01, 0), Vector3(0.12, 0.12, 0.12), skin, BALL)  # hand
 		elbows.append(elbow)
 	_last_pos = global_position
 
@@ -219,8 +222,13 @@ func _pivot(parent: Node3D, pos: Vector3) -> Node3D:
 	return p
 
 
-func _part(group: String, parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
-	var m := Greybox.box(parent, Transform3D(Basis(), pos), size, color, false)
+## Adds one piece of the body: a box, or a rounded shape when `kind` is a Greybox.Shape.
+func _part(group: String, parent: Node3D, pos: Vector3, size: Vector3, color: Color, kind := -1) -> void:
+	var m: Node3D
+	if kind < 0:
+		m = Greybox.box(parent, Transform3D(Basis(), pos), size, color, false)
+	else:
+		m = Greybox.round(parent, Transform3D(Basis(), pos), size, color, kind)
 	if not _parts.has(group):
 		_parts[group] = []
 	_parts[group].append(m)

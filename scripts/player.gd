@@ -200,19 +200,13 @@ func _build_arm() -> void:
 	if role != Role.HUNTER:
 		return
 	_arm = Node3D.new()
-	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.1)), Vector3(0.13, 0.13, 0.2), SLEEVE_COLOR, false)
-	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.34)), Vector3(0.11, 0.11, 0.3), SKIN_COLOR, false)
-	Greybox.box(_arm, Transform3D(Basis(), Vector3(0, 0, -0.53)), Vector3(0.12, 0.12, 0.11), SKIN_COLOR, false)
-	var baton := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.035
-	cyl.bottom_radius = 0.035
-	cyl.height = 0.7
-	cyl.radial_segments = 8
-	baton.mesh = cyl
-	baton.material_override = Greybox.material(BATON_COLOR)
-	baton.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(0, 0, -0.8))
-	_arm.add_child(baton)
+	# Pieces lie along -Z (rounded shapes are built along Y, so tip them forward).
+	var along := Basis(Vector3.RIGHT, PI / 2.0)
+	Greybox.round(_arm, Transform3D(along, Vector3(0, 0, -0.1)), Vector3(0.15, 0.24, 0.15), SLEEVE_COLOR, Greybox.Shape.PILL)
+	Greybox.round(_arm, Transform3D(along, Vector3(0, 0, -0.34)), Vector3(0.12, 0.32, 0.12), SKIN_COLOR, Greybox.Shape.PILL)
+	Greybox.round(_arm, Transform3D(along, Vector3(0, 0, -0.53)), Vector3(0.14, 0.13, 0.14), SKIN_COLOR, Greybox.Shape.BALL)
+	Greybox.round(_arm, Transform3D(along, Vector3(0, 0, -0.85)), Vector3(0.07, 0.7, 0.07), BATON_COLOR, Greybox.Shape.ROD)
+	Greybox.round(_arm, Transform3D(along, Vector3(0, 0, -1.2)), Vector3(0.09, 0.05, 0.09), BATON_COLOR, Greybox.Shape.ROD)
 	if _camera:
 		_camera.add_child(_arm)
 		_arm.position = Vector3(0.24, -0.19, -0.15)
@@ -220,6 +214,10 @@ func _build_arm() -> void:
 		_model.right_shoulder.add_child(_arm)
 	for m in _arm.get_children():
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _camera else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if _camera:
+			# Right in front of the camera an ink outline would look huge, so skip it.
+			m.material_override = m.material_override.duplicate()
+			m.material_override.next_pass = null
 
 
 ## The red light the Hunter casts in front of them, so the Runner can tell where they're looking.
@@ -337,7 +335,7 @@ func _move(delta: float) -> void:
 	var input := Vector2.ZERO
 	var want_sprint := false
 	var want_crouch := false
-	if frozen or downed or stun > 0.0 or busy > 0.0:
+	if frozen or downed or stun > 0.0 or busy > 0.0 or (role == Role.HUNTER and game.hunter_held()):
 		pass
 	elif is_bot:
 		input = bot_input
@@ -421,7 +419,7 @@ func current_speed() -> float:
 # --- Hunter: attacking ---------------------------------------------------
 
 func try_attack() -> void:
-	if role != Role.HUNTER or frozen or stun > 0.0 or busy > 0.0 or cooldown > 0.0 or lunge_time >= 0.0:
+	if role != Role.HUNTER or frozen or game.hunter_held() or stun > 0.0 or busy > 0.0 or cooldown > 0.0 or lunge_time >= 0.0:
 		return
 	lunge_time = 0.0
 

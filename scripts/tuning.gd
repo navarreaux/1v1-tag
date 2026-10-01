@@ -76,5 +76,7 @@ extends Resource
 ## A round ends here even if the Runner is never caught (seconds).
 @export var round_time_cap := 300.0
 @export var countdown_time := 3.0
+## When the chase starts, the Runner can move for this many seconds before the Hunter can.
+@export var runner_head_start := 3.0
 ## Survival times closer than this count as a draw.
 @export var tie_window := 1.0

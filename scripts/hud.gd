@@ -2,6 +2,7 @@ extends CanvasLayer
 ## On-screen text: the timer, your role and health, what the Space key will do, and the pause menu.
 
 const Role := preload("res://scripts/player.gd").Role
+const TUNING := preload("res://tuning.tres")
 
 var game: Node
 
@@ -153,6 +154,10 @@ func _process(delta: float) -> void:
 			var it: Dictionary = game.find_interaction(me)
 			if not it.is_empty():
 				_prompt.text = "[Space] " + it.text
+
+	if me and game.hunter_held():
+		var left := ceili(TUNING.runner_head_start - game.clock)
+		_prompt.text = ("Runner's head start: you can move in %d" if me.role == Role.HUNTER else "Head start! The Hunter is released in %d") % left
 
 	if _flash_time > 0.0 and _big.text == "":
 		_big.text = _flash_text
