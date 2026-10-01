@@ -17,6 +17,7 @@ const FLAG_CROUCH := 8
 const FLAG_SPRINT := 16
 const FLAG_VAULT := 32
 const FLAG_STUN := 64
+const FLAG_SLIDE := 128
 
 const GRAVITY := 20.0
 const RUNNER_CAMERA_DISTANCE := 3.0
@@ -64,8 +65,11 @@ var boost := 0.0  # Runner speed boost after being hit
 ## Runner movement state.
 var sprinting := false
 var crouching := false
-var run_up := 0.0  # meters sprinted at full speed (for fast vaults)
-var revault_run_up := 0.0  # the same, but only reset by vaulting (for re-vaulting the same thing)
+var sprint_held := false  # Shift is down (pallet vaults are fast while it is)
+## Recent movement, newest last, for fast window vaults: [seconds, flat velocity] per physics
+## frame, with a zero velocity for frames spent not sprinting at full speed. Cleared by vaulting.
+var _sprint_log: Array = []
+var sliding := false  # this vault is a slide over a barricade rather than a window hop
 var last_vault := ""  # which window or barricade we vaulted last, like "w3" or "b5"
 var dropped_barricade := -1  # the barricade we just dropped, and how long until we may vault it
 var drop_lock := 0.0
@@ -150,8 +154,9 @@ func set_role(r: Role) -> void:
 	wiping = false
 	sprinting = false
 	crouching = false
-	run_up = 0.0
-	revault_run_up = 0.0
+	sprint_held = false
+	_sprint_log.clear()
+	sliding = false
 	last_vault = ""
 	dropped_barricade = -1
 	drop_lock = 0.0
@@ -291,7 +296,7 @@ func _pose() -> BodyModel.Pose:
 	if downed:
 		return BodyModel.Pose.DOWNED
 	if (vaulting if local else _net_flags & FLAG_VAULT != 0):
-		return BodyModel.Pose.VAULT
+		return BodyModel.Pose.SLIDE if (sliding if local else _net_flags & FLAG_SLIDE != 0) else BodyModel.Pose.VAULT
 	if (stun > 0.0 if local else _net_flags & FLAG_STUN != 0):
 		return BodyModel.Pose.STUNNED
 	if crouching:
@@ -333,6 +338,8 @@ func _flags() -> int:
 		f |= FLAG_SPRINT
 	if vaulting:
 		f |= FLAG_VAULT
+	if sliding:
+		f |= FLAG_SLIDE
 	if stun > 0.0:
 		f |= FLAG_STUN
 	return f
@@ -356,6 +363,7 @@ func _move(delta: float) -> void:
 	if role == Role.RUNNER:
 		_set_crouch(want_crouch and not downed)
 		sprinting = want_sprint and not crouching and input.length() > 0.1
+		sprint_held = want_sprint
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	var speed := current_speed()
 	dir = _wall_slide(dir, speed * delta)
@@ -366,13 +374,18 @@ func _move(delta: float) -> void:
 	elif dir.length() > 0.1:
 		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), minf(1.0, delta * 12.0))
 	move_and_slide()
-	var flat_speed := Vector2(get_real_velocity().x, get_real_velocity().z).length()
-	if sprinting and flat_speed >= TUNING.runner_sprint_speed * 0.9:
-		run_up += flat_speed * delta
-		revault_run_up += flat_speed * delta
-	else:
-		run_up = 0.0
-		revault_run_up = 0.0
+	if role == Role.RUNNER:
+		var flat := get_real_velocity()
+		flat.y = 0.0
+		var full_speed := sprinting and flat.length() >= TUNING.runner_sprint_speed * 0.9
+		_sprint_log.append([delta, flat if full_speed else Vector3.ZERO])
+		var kept := 0.0
+		var i := _sprint_log.size() - 1
+		while i > 0 and kept < 2.0:
+			kept += _sprint_log[i][0]
+			i -= 1
+		if i > 0:
+			_sprint_log = _sprint_log.slice(i)
 
 
 ## Like Dead by Daylight: running at a wall at a shallow angle slides you along it at full speed
@@ -449,6 +462,7 @@ func _update_lunge(delta: float) -> void:
 		lunge_time = -1.0
 		cooldown = TUNING.hunter_hit_cooldown
 		wiping = true
+		reset_bloodlust()  # a hit ends bloodlust (the host confirms the hit, and resets it again)
 		game.request_hit.rpc_id(1)
 		return
 	var keep_going: bool = lunge_time < TUNING.hunter_lunge_min or (_attack_held() and lunge_time < TUNING.hunter_lunge_max)
@@ -583,34 +597,30 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 
 	var speed_name := "slow"
 	var duration: float = TUNING.hunter_window_vault_time
+	sliding = false
 	if role == Role.RUNNER:
-		# Fast vaults need you to be running straight at the opening.
-		var moving := get_real_velocity()
-		moving.y = 0.0
-		var straight := moving.length() > 0.5 and moving.normalized().dot(through) >= cos(deg_to_rad(TUNING.fast_vault_max_angle))
-		# Going back over the thing you just vaulted needs a longer fresh run-up to be fast.
-		var again := key != "" and key == last_vault
-		var enough_run: bool = revault_run_up >= TUNING.fast_vault_runup_meters * TUNING.revault_runup_mult if again \
-			else run_up >= TUNING.fast_vault_runup_meters
 		if kind == VaultKind.WINDOW:
-			if sprinting and enough_run and straight:
+			# A fast vault needs a straight sprint at the window: going back over the window you just
+			# vaulted needs a longer one.
+			var need: float = TUNING.fast_vault_sprint_time
+			if key != "" and key == last_vault:
+				need *= TUNING.revault_sprint_mult
+			if _sprinted_at(through, need):
 				speed_name = "fast"
 			elif sprinting:
 				speed_name = "medium"
 			duration = {"fast": TUNING.window_vault_fast, "medium": TUNING.window_vault_medium, "slow": TUNING.window_vault_slow}[speed_name]
 		else:
-			var fast := sprinting and (enough_run or not again)
-			speed_name = "fast" if fast else "slow"
-			duration = TUNING.barricade_vault_fast if fast else TUNING.barricade_vault_slow
+			# Barricades: holding Shift while pressing Space slides over fast; otherwise it's slow.
+			sliding = true
+			speed_name = "fast" if sprint_held else "slow"
+			duration = TUNING.barricade_vault_fast if sprint_held else TUNING.barricade_vault_slow
 		last_vault = key
-		revault_run_up = 0.0
+		_sprint_log.clear()
 		rotation.y = atan2(-through.x, -through.z)
 		if speed_name != "slow":
 			# Rushed vaults are loud: the Hunter gets a noise alert. Slow vaults are silent.
 			game.make_noise.rpc(xf.origin)
-		# A fast vault keeps your momentum; anything slower makes you build a run-up again.
-		if speed_name != "fast":
-			run_up = 0.0
 
 	var start := global_position
 	var end := xf.origin + through * 1.0
@@ -623,14 +633,32 @@ func vault(xf: Transform3D, kind: VaultKind, key := "") -> void:
 	collision_layer = 0
 	collision_mask = 0
 	var hop := 0.6 if speed_name != "fast" else 0.4
+	if sliding:
+		hop = 0.15  # slide over low, feet first
 	var tween := create_tween()
 	tween.tween_method(func(t: float): global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * hop, 0.0, 1.0, duration)
 	tween.finished.connect(func():
 		collision_layer = layer
 		collision_mask = mask
-		vaulting = false)
+		vaulting = false
+		sliding = false)
 	if is_human_local():
 		game.hud.flash("%s vault" % speed_name.capitalize())
+
+
+## True if, for the last `seconds`, we've been sprinting at full speed within the fast-vault angle
+## of `through` (so from straight on up to 45 degrees off).
+func _sprinted_at(through: Vector3, seconds: float) -> bool:
+	var min_dot := cos(deg_to_rad(TUNING.fast_vault_max_angle))
+	var total := 0.0
+	var i := _sprint_log.size() - 1
+	while i >= 0 and total < seconds:
+		var v: Vector3 = _sprint_log[i][1]
+		if v == Vector3.ZERO or v.normalized().dot(through) < min_dot:
+			return false
+		total += _sprint_log[i][0]
+		i -= 1
+	return total >= seconds - 0.001
 
 
 ## Stand still for `duration` seconds, then run `done` (used for breaking barricades).

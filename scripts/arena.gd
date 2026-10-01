@@ -1,9 +1,9 @@
 extends Node3D
-## The map: a 112 x 112 m sunny subway yard laid out like a Dead by Daylight map.
-## A very strong Runner building (the depot) sits in one corner; both players start there.
-## The other corners hold zones of well-spaced tiles (T walls, L walls, jungle gyms, shacks),
-## joined by sparse filler: shipping containers, lamp posts, container barricades and parked trains.
-## Tiles are long and thin rather than square, so no single block can be looped forever.
+## The map: a 150 x 150 m sunny subway yard laid out like a Dead by Daylight map, and like a
+## clock face: dense zones of tiles at 12, 3, 6 and 9 o'clock, a couple of tiles in the middle,
+## and sparse filler in between (shipping containers, lamp posts, container barricades, trains).
+## A very strong Runner building (the depot) sits in the north-east corner; both players start there.
+## Tiles are long, thin and turned at odd angles rather than square, so loops are longer.
 ## Every barricade stands in a gap between two solid things, so it can always be looped.
 ## Every player builds the same map from this code, so nothing about it is sent over the network.
 
@@ -11,7 +11,7 @@ const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const TUNING := preload("res://tuning.tres")
 
-const SIZE := 112.0
+const SIZE := 150.0
 const WALL_H := 2.6
 const WALL_T := 0.4
 const WINDOW_W := 1.4
@@ -31,38 +31,41 @@ const PAINT := [Color(1.0, 0.25, 0.6), Color(0.1, 0.85, 0.95), Color(0.5, 0.95, 
 	Color(0.6, 0.3, 1.0), Color(1.0, 0.5, 0.1), Color(0.2, 0.45, 1.0)]
 
 ## Both players start at the depot in the north-east corner: the Runner inside, the Hunter
-## about 23 m away facing it. (The Hunter also waits out the Runner's head start.)
-const DEPOT := Vector3(40.6, 0, -42)
-const RUNNER_SPAWN := Vector3(47.85, 0, -42)
+## about 22 m away facing it. (The Hunter also waits out the Runner's head start.)
+const DEPOT := Vector3(58, 0, -58)
+const RUNNER_SPAWN := Vector3(65.25, 0, -58)
 const RUNNER_SPAWN_YAW := PI  # facing along the corridor
-const HUNTER_SPAWN := Vector3(30, 0, -27)
-const HUNTER_SPAWN_YAW := -0.615  # facing the depot
+const HUNTER_SPAWN := Vector3(47, 0, -45)
+const HUNTER_SPAWN_YAW := -0.702  # facing the depot
 
-enum Tile { T_WALL, L_WINDOW, L_BARRICADE, JUNGLE_GYM, SHACK, LONG_WALL, BARRICADE_LOOP }
-## Tiles are long and thin, fit within about 6.5 m of their middle, and sit at least 8 m apart: [tile, x, z, degrees].
+enum Tile { T_WALL, L_WINDOW, L_BARRICADE, JUNGLE_GYM, SHACK, LONG_WALL, BARRICADE_LOOP, BENT_WALL }
+## Tiles fit within about 8 m of their middle: [tile, x, z, degrees]. The long wall (two walls with
+## a window between) is very strong, so there is only one.
 const TILES := [
-	# North-west zone
-	[Tile.T_WALL, -44.1, -44.1, 0], [Tile.JUNGLE_GYM, -20.3, -44.1, 0],
-	[Tile.LONG_WALL, -44.1, -20.3, 90], [Tile.L_WINDOW, -20.3, -20.3, 180],
-	# South-west zone
-	[Tile.JUNGLE_GYM, -44.1, 20.3, 90], [Tile.L_BARRICADE, -20.3, 20.3, 0],
-	[Tile.SHACK, -44.1, 44.1, 180], [Tile.T_WALL, -20.3, 44.1, 180],
-	# South-east zone
-	[Tile.LONG_WALL, 20.3, 20.3, 0], [Tile.L_WINDOW, 44.1, 20.3, 90],
-	[Tile.T_WALL, 20.3, 44.1, 270], [Tile.BARRICADE_LOOP, 44.1, 44.1, 0],
-	# Around the depot (north-east)
-	[Tile.L_BARRICADE, 18.9, -44.1, 90], [Tile.SHACK, 44.1, -20.3, 0], [Tile.JUNGLE_GYM, 20.3, -20.3, 0],
-	# Middle of the map
-	[Tile.T_WALL, 0, 0, 0],
+	# 12 o'clock
+	[Tile.T_WALL, -12, -56, 15], [Tile.L_WINDOW, 11, -58, 160],
+	[Tile.SHACK, -11, -38, 80], [Tile.BENT_WALL, 12, -39, -20],
+	# 3 o'clock
+	[Tile.JUNGLE_GYM, 56, -11, 100], [Tile.L_BARRICADE, 40, -13, 200],
+	[Tile.T_WALL, 57, 12, 250], [Tile.BENT_WALL, 39, 11, 40],
+	# 6 o'clock
+	[Tile.LONG_WALL, 12, 57, -10], [Tile.L_WINDOW, -11, 57, 20],
+	[Tile.T_WALL, 11, 38, 195], [Tile.L_BARRICADE, -12, 39, 70],
+	# 9 o'clock
+	[Tile.SHACK, -56, 12, 100], [Tile.BARRICADE_LOOP, -57, -10, 75],
+	[Tile.L_WINDOW, -39, -12, 290], [Tile.BENT_WALL, -40, 11, 140],
+	# Middle
+	[Tile.T_WALL, -6, -5, 25], [Tile.BARRICADE_LOOP, 8, 7, -35],
 ]
 ## Filler between the zones: [x, z, degrees].
-const ROCK_PALLETS := [[0, -33.6, 0], [0, 33.6, 0], [-33.6, 0, 90], [33.6, 0, 90]]
-const ROCKS := [[-8.4, -19.6], [8.4, -23.8], [-8.4, -46.2], [9.8, 44.8], [-7, 21], [7, 18.2], [19.6, -7], [-21, 8.4],
-	[-46.2, -8.4], [43.4, 8.4]]
-const LAMPS := [[-4.2, -14], [4.2, 14], [-14, 4.2], [14, -4.2], [-9.8, -37.8], [9.8, -29.4], [-9.8, 29.4], [9.8, 37.8],
-	[-29.4, -8.4], [-37.8, 8.4], [29.4, 8.4], [37.8, -8.4]]
+const ROCK_PALLETS := [[0, -24, 0], [24, 0, 90], [0, 24, 0], [-24, 0, 90],
+	[-36, -34, 45], [-34, 36, -45], [36, 34, 45], [32, -30, -45]]
+const ROCKS := [[-28, -46], [-47, -27], [-50, -52], [-46, 29], [-28, 47], [-52, 55],
+	[47, 28], [28, 47], [53, 53], [26, -24], [-15, 14], [17, -15]]
+const LAMPS := [[-5, -16], [5, 18], [-17, 4], [18, -5], [-30, -30], [30, 30], [-30, 30], [24, -36],
+	[-42, -42], [42, 42], [-42, 42], [-5, -30], [5, 30], [-30, 5], [30, -5]]
 ## Parked trains on tracks along the edges: [x, z, degrees]. At 0 degrees a train runs along X.
-const TRAINS := [[0, -51.1, 0], [0, 51.1, 0], [-51.1, 0, 90], [51.1, 0, 90]]
+const TRAINS := [[-40, -69, 0], [40, 69, 0], [-69, 40, 90], [69, 40, 90]]
 
 ## Barricade nodes, in a fixed order so peers can refer to them by index.
 var barricades: Array = []
@@ -71,6 +74,8 @@ var windows: Array[Transform3D] = []
 ## Per window: Runner vaults so far, and seconds left blocked (0 = open).
 var window_vaults: Array[int] = []
 var window_blocked: Array[float] = []
+## Per window: seconds since its last Runner vault (the count starts over after a long gap).
+var window_since: Array[float] = []
 var _window_blockers: Array[Node3D] = []
 ## Points worth running to (both sides of every window and barricade); used by the bot.
 var loop_spots: Array[Vector3] = []
@@ -178,6 +183,7 @@ func reset() -> void:
 	for i in windows.size():
 		window_vaults[i] = 0
 		window_blocked[i] = 0.0
+		window_since[i] = 0.0
 
 
 func is_window_blocked(i: int) -> bool:
@@ -187,6 +193,10 @@ func is_window_blocked(i: int) -> bool:
 ## Counts a Runner vault. Too many on the same window and it's blocked for a while,
 ## so the Runner can't loop one window forever.
 func note_window_vault(i: int) -> void:
+	# 30 s or more between two vaults and the count starts over.
+	if window_since[i] >= TUNING.window_block_reset_time:
+		window_vaults[i] = 0
+	window_since[i] = 0.0
 	window_vaults[i] += 1
 	if window_vaults[i] >= TUNING.window_block_vaults:
 		window_vaults[i] = 0
@@ -196,6 +206,7 @@ func note_window_vault(i: int) -> void:
 func _process(delta: float) -> void:
 	for i in windows.size():
 		window_blocked[i] = maxf(0.0, window_blocked[i] - delta)
+		window_since[i] += delta
 		_window_blockers[i].visible = window_blocked[i] > 0.0
 
 
@@ -249,6 +260,7 @@ func _window(tile: Transform3D, x: float, z: float) -> void:
 	windows.append(tile * Transform3D(Basis(), Vector3(x, 0, z)))
 	window_vaults.append(0)
 	window_blocked.append(0.0)
+	window_since.append(0.0)
 	var blocker := Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, (SILL_H + LINTEL_Y) / 2.0, z)), Vector3(WINDOW_W, LINTEL_Y - SILL_H, 0.05), Color(0.8, 0.1, 0.1), false)
 	blocker.visible = false
 	_window_blockers.append(blocker)
@@ -318,6 +330,7 @@ func _tile(kind: Tile, tile: Transform3D) -> void:
 		Tile.SHACK: _shack(tile)
 		Tile.LONG_WALL: _long_wall(tile)
 		Tile.BARRICADE_LOOP: _barricade_loop(tile)
+		Tile.BENT_WALL: _bent_wall(tile)
 
 
 ## The depot: the strongest Runner building, in a corner. Inside, a corridor runs all the way
@@ -350,9 +363,9 @@ func _depot(tile: Transform3D) -> void:
 ## A T: a long wall with a window, and a stem coming off its middle with a barricade in it.
 func _t_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
-	_wall_x(tile, -6.5, -3 - w, -3.5)
-	_window(tile, -3, -3.5)
-	_wall_x(tile, -3 + w, 6.5, -3.5)
+	_wall_x(tile, -7.5, -3.5 - w, -3.5)
+	_window(tile, -3.5, -3.5)
+	_wall_x(tile, -3.5 + w, 7.5, -3.5)
 	_wall_z(tile, -3.5 + WALL_T / 2.0, -1, 0)
 	_barricade(tile, 0, 0, 90)
 	_wall_z(tile, 1, 3, 0)
@@ -361,15 +374,15 @@ func _t_wall(tile: Transform3D) -> void:
 ## A long L with a window in its long side.
 func _l_window(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
-	_wall_x(tile, -6.5, -1.5 - w, -3.5)
-	_window(tile, -1.5, -3.5)
-	_wall_x(tile, -1.5 + w, 3.5 + WALL_T / 2.0, -3.5)
+	_wall_x(tile, -8, -2 - w, -3.5)
+	_window(tile, -2, -3.5)
+	_wall_x(tile, -2 + w, 3.5 + WALL_T / 2.0, -3.5)
 	_wall_z(tile, -3.5 + WALL_T / 2.0, 1.5, 3.5)
 
 
 ## A long L with a barricade in its short side.
 func _l_barricade(tile: Transform3D) -> void:
-	_wall_x(tile, -7, 2.5 + WALL_T / 2.0, -3.5)
+	_wall_x(tile, -8.5, 2.5 + WALL_T / 2.0, -3.5)
 	_wall_z(tile, -3.5 + WALL_T / 2.0, -0.5, 2.5)
 	_barricade(tile, 2.5, 0.5, 90)
 	_wall_z(tile, 1.5, 2.7, 2.5)
@@ -412,22 +425,34 @@ func _shack(tile: Transform3D) -> void:
 ## A long wall with a window and a barricade, with side walls to break line of sight.
 func _long_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
-	_wall_x(tile, -6, -w, 0)
+	_wall_x(tile, -7, -w, 0)
 	_window(tile, 0, 0)
-	_wall_x(tile, w, 3.2, 0)
-	_barricade(tile, 4.2, 0)
-	_wall_x(tile, 5.2, 6, 0)
-	_wall_z(tile, WALL_T / 2.0, 2.5, -6)
-	_wall_z(tile, -2.5, -WALL_T / 2.0, 6)
+	_wall_x(tile, w, 4.2, 0)
+	_barricade(tile, 5.2, 0)
+	_wall_x(tile, 6.2, 7, 0)
+	_wall_z(tile, WALL_T / 2.0, 2.5, -7)
+	_wall_z(tile, -2.5, -WALL_T / 2.0, 7)
 
 
 ## A wall with a barricade in the middle and side walls at both ends.
 func _barricade_loop(tile: Transform3D) -> void:
-	_wall_x(tile, -6, -1, 0)
+	_wall_x(tile, -7, -1, 0)
 	_barricade(tile, 0, 0)
-	_wall_x(tile, 1, 6, 0)
-	_wall_z(tile, -2.5, -WALL_T / 2.0, -6)
-	_wall_z(tile, WALL_T / 2.0, 2.5, 6)
+	_wall_x(tile, 1, 7, 0)
+	_wall_z(tile, -2.5, -WALL_T / 2.0, -7)
+	_wall_z(tile, WALL_T / 2.0, 2.5, 7)
+
+
+## A long wall bent in the middle: a straight run, a barricade at the bend, then a run angled
+## 30 degrees away with a window in it.
+func _bent_wall(tile: Transform3D) -> void:
+	var w := WINDOW_W / 2.0
+	_wall_x(tile, -8, -1, 0)
+	_barricade(tile, 0, 0)
+	var bend := tile * Transform3D(Basis(Vector3.UP, deg_to_rad(30)), Vector3(1, 0, 0))
+	_wall_x(bend, 0, 4 - w, 0)
+	_window(bend, 4, 0)
+	_wall_x(bend, 4 + w, 8, 0)
 
 
 ## Filler: a barricade between the ends of two short containers. Weak, but it can buy a few
