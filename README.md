@@ -63,7 +63,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 
 | File | What it does |
 | --- | --- |
-| `scripts/main.gd` | Main menu (host, join, practice) |
+| `scripts/main.gd` | Main menu (bot match, host, join) |
 | `scripts/game.gd` | Rounds, hits, barricades and who wins; the host decides these |
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
 | `scripts/arena.gd` | Builds the greybox map |
