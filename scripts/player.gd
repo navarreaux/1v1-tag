@@ -411,7 +411,9 @@ func _update_momentum(input: Vector2, delta: float) -> void:
 	if input.length() > 0.1:
 		var now := input.normalized()
 		if _last_input != Vector2.ZERO:
-			var change := (1.0 - now.dot(_last_input)) / 2.0  # 0 same way .. 1 opposite
+			# 0 same way .. 1 opposite. Clamped: rounding can push the dot product a hair past 1,
+			# and pow() of a negative number is NaN, which would fling the player off the map.
+			var change := clampf((1.0 - now.dot(_last_input)) / 2.0, 0.0, 1.0)
 			# Curved, so small adjustments (forward to forward-left) cost next to nothing.
 			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * pow(change, 1.5)))
 		_last_input = now
