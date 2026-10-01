@@ -45,10 +45,10 @@ extends Resource
 @export var window_vault_fast := 0.5
 @export var window_vault_medium := 0.9
 @export var window_vault_slow := 1.5
-## Barricades only have two speeds: holding Shift while pressing Space slides over fast,
+## Trash cans only have two speeds: holding Shift while pressing Space hurdles over fast,
 ## otherwise it's slow.
-@export var barricade_vault_fast := 0.55
-@export var barricade_vault_slow := 2.0
+@export var barricade_vault_fast := 0.6
+@export var barricade_vault_slow := 2.2
 ## Fast vaulting the window you just vaulted needs this much longer a sprint (1.5 = 50% more).
 @export var revault_sprint_mult := 1.5
 ## After dropping a barricade the Runner is stuck in place this long (seconds)...

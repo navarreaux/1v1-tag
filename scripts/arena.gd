@@ -21,6 +21,8 @@ const MAP_NAMES := ["Rotten Fields", "The Last Stop"]
 
 const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
+## Half the width of a trash can gap.
+const GAP := Barricade.GAP_WIDTH / 2.0
 const TUNING := preload("res://tuning.tres")
 
 const CELL := 24.0
@@ -215,14 +217,16 @@ func _service_station(tile: Transform3D) -> void:
 	_wall_z(tile, 3, h - e, -h)
 	_wall_x(tile, -h - e, -3, h)
 	_wall_x(tile, 3, h + e, h)
-	# The shop, with a trash can in the 2 m gap between it and the east fence.
+	# The shop, with a trash can in the gap between it and the east fence.
 	_wall_color = MAIN_COLOR
-	var shop := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(8.5, 1.6, -10)), Vector3(9, 3.2, 7), MAIN_COLOR)
+	var gap_x := h - WALL_T / 2.0 - GAP
+	var shop_x1 := gap_x - GAP
+	var shop := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(shop_x1 - 4.5, 1.6, -10)), Vector3(9, 3.2, 7), MAIN_COLOR)
 	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 1.9, 0)), Vector3(9.4, 0.4, 7.4), MAIN_COLOR.darkened(0.3), false)
 	Greybox.box(shop, Transform3D(Basis(), Vector3(-1, 0.2, 3.52)), Vector3(4, 1.2, 0.05), WINDOW_COLOR, false)
 	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 2.4, 3.5)), Vector3(5, 0.7, 0.2), PAINT[3], false)
 	_wall_color = WALL_COLOR
-	_barricade(tile, 14, -10, 90)
+	_barricade(tile, gap_x, -10, 90)
 	# Pump island: low and solid (you can see over it), with pumps on top, under a canopy.
 	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 0.5, 2)), Vector3(10, 1.0, 2.4), Color(0.75, 0.75, 0.72))
 	for x in [-3.0, 3.0]:
@@ -240,9 +244,9 @@ func _short_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
 	_wall_x(tile, -5, -2 - w, 0)
 	_window(tile, -2, 0)
-	_wall_x(tile, -2 + w, 1, 0)
+	_wall_x(tile, -2 + w, 2 - GAP, 0)
 	_barricade(tile, 2, 0)
-	_wall_x(tile, 3, 4.5, 0)
+	_wall_x(tile, 2 + GAP, 4.5, 0)
 	_wall_z(tile, WALL_T / 2.0, 2.5, -5)
 
 
@@ -267,11 +271,12 @@ func _bake_navigation() -> void:
 	var nm := NavigationMesh.new()
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nm.geometry_collision_mask = Greybox.WORLD_LAYER
-	nm.agent_radius = 0.5
+	nm.agent_radius = 0.4
 	nm.agent_height = 2.0
 	nm.agent_max_climb = 0.25
 	_nav.navigation_mesh = nm
-	# Barricades are up while baking, so their gaps count as open.
+	# Trash cans aren't part of the bake, so their gaps count as open. Paths run through the middle
+	# of a gap and bodies slide around a standing can.
 	_nav.bake_navigation_mesh(false)
 	# Window vaults are shortcuts the path finder may use; they cost extra because vaulting is slow.
 	for w in windows:
@@ -419,7 +424,7 @@ func _window_z(tile: Transform3D, z: float, x: float) -> void:
 	_window(tile * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, 0, z)), 0, 0)
 
 
-## A barricade standing in a 2 m gap centered at (x, z). At 0 degrees the gap runs along X.
+## A trash can standing in a gap (Barricade.GAP_WIDTH wide) centered at (x, z). At 0 degrees the gap runs along X.
 func _barricade(tile: Transform3D, x: float, z: float, degrees := 0.0) -> void:
 	var b := Barricade.new()
 	b.transform = tile * Transform3D(Basis(Vector3.UP, deg_to_rad(degrees)), Vector3(x, 0, z))
@@ -504,9 +509,9 @@ func _depot(tile: Transform3D) -> void:
 	# The long solid middle block.
 	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, WALL_H / 2.0, 0)), Vector3(11, WALL_H, 2.5), MAIN_COLOR.darkened(0.15))
 	# The barricade across the west corridor, between the outer wall and the block.
-	_wall_x(tile, -9 + e, -8.25, 0)
+	_wall_x(tile, -9 + e, -7.25 - GAP, 0)
 	_barricade(tile, -7.25, 0)
-	_wall_x(tile, -6.25, -5.5, 0)
+	_wall_x(tile, -7.25 + GAP, -5.5, 0)
 	_wall_color = WALL_COLOR
 
 
@@ -516,9 +521,9 @@ func _t_wall(tile: Transform3D) -> void:
 	_wall_x(tile, -7.5, -3.5 - w, -3.5)
 	_window(tile, -3.5, -3.5)
 	_wall_x(tile, -3.5 + w, 7.5, -3.5)
-	_wall_z(tile, -3.5 + WALL_T / 2.0, -1, 0)
+	_wall_z(tile, -3.5 + WALL_T / 2.0, -GAP, 0)
 	_barricade(tile, 0, 0, 90)
-	_wall_z(tile, 1, 3, 0)
+	_wall_z(tile, GAP, 3.5, 0)
 
 
 ## A long L with a window in its long side.
@@ -533,9 +538,9 @@ func _l_window(tile: Transform3D) -> void:
 ## A long L with a barricade in its short side.
 func _l_barricade(tile: Transform3D) -> void:
 	_wall_x(tile, -8.5, 2.5 + WALL_T / 2.0, -3.5)
-	_wall_z(tile, -3.5 + WALL_T / 2.0, -0.5, 2.5)
+	_wall_z(tile, -3.5 + WALL_T / 2.0, 0.5 - GAP, 2.5)
 	_barricade(tile, 2.5, 0.5, 90)
-	_wall_z(tile, 1.5, 2.7, 2.5)
+	_wall_z(tile, 0.5 + GAP, 3.0, 2.5)
 
 
 ## A jungle gym: two Ls facing each other around a long 11 x 5 m rectangle. One has a window and
@@ -547,9 +552,9 @@ func _jungle_gym(tile: Transform3D) -> void:
 	var e := WALL_T / 2.0
 	_wall_x(tile, -hx - e, -2.5 - w, -hz)
 	_window(tile, -2.5, -hz)
-	_wall_x(tile, -2.5 + w, 1.5, -hz)
+	_wall_x(tile, -2.5 + w, 2.5 - GAP, -hz)
 	_barricade(tile, 2.5, -hz)
-	_wall_x(tile, 3.5, hx + e, -hz)
+	_wall_x(tile, 2.5 + GAP, hx + e, -hz)
 	_wall_z(tile, -hz + e, 0.5, -hx)
 	_wall_x(tile, -1.5, hx + e, hz)
 	_wall_z(tile, -0.5, hz - e, hx)
@@ -568,8 +573,8 @@ func _shack(tile: Transform3D) -> void:
 	_wall_x(tile, 1.1, hx, hz)
 	_wall_z(tile, -hz - WALL_T / 2.0, hz + WALL_T / 2.0, -hx)
 	_wall_z(tile, -hz - WALL_T / 2.0, hz + WALL_T / 2.0, hx)
-	_barricade(tile, hx + 1.2, hz)
-	_wall_z(tile, hz - 1, hz + 1, hx + 2.4)
+	_barricade(tile, hx + WALL_T / 2.0 + GAP, hz)
+	_wall_z(tile, hz - 1, hz + 1, hx + WALL_T + 2.0 * GAP)
 
 
 ## A long wall with a window and a barricade, with side walls to break line of sight.
@@ -577,18 +582,18 @@ func _long_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
 	_wall_x(tile, -7, -w, 0)
 	_window(tile, 0, 0)
-	_wall_x(tile, w, 4.2, 0)
+	_wall_x(tile, w, 5.2 - GAP, 0)
 	_barricade(tile, 5.2, 0)
-	_wall_x(tile, 6.2, 7, 0)
+	_wall_x(tile, 5.2 + GAP, 7, 0)
 	_wall_z(tile, WALL_T / 2.0, 2.5, -7)
 	_wall_z(tile, -2.5, -WALL_T / 2.0, 7)
 
 
 ## A wall with a barricade in the middle and side walls at both ends.
 func _barricade_loop(tile: Transform3D) -> void:
-	_wall_x(tile, -7, -1, 0)
+	_wall_x(tile, -7, -GAP, 0)
 	_barricade(tile, 0, 0)
-	_wall_x(tile, 1, 7, 0)
+	_wall_x(tile, GAP, 7, 0)
 	_wall_z(tile, -2.5, -WALL_T / 2.0, -7)
 	_wall_z(tile, WALL_T / 2.0, 2.5, 7)
 
@@ -597,9 +602,9 @@ func _barricade_loop(tile: Transform3D) -> void:
 ## 30 degrees away with a window in it.
 func _bent_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
-	_wall_x(tile, -8, -1, 0)
+	_wall_x(tile, -8, -GAP, 0)
 	_barricade(tile, 0, 0)
-	var bend := tile * Transform3D(Basis(Vector3.UP, deg_to_rad(30)), Vector3(1, 0, 0))
+	var bend := tile * Transform3D(Basis(Vector3.UP, deg_to_rad(30)), Vector3(GAP, 0, 0))
 	_wall_x(bend, 0, 4 - w, 0)
 	_window(bend, 4, 0)
 	_wall_x(bend, 4 + w, 8, 0)
@@ -615,23 +620,23 @@ func _l_pair(tile: Transform3D) -> void:
 	_wall_x(tile, -1 + w, 5, -6)
 	_wall_z(tile, -6 + e, 1, -6)
 	_wall_x(tile, -5, 6 + e, 6)
-	_wall_z(tile, 2.5, 6 - e, 6)
+	_wall_z(tile, 1.5 + GAP, 6 - e, 6)
 	_barricade(tile, 6, 1.5, 90)
-	_wall_z(tile, -1.5, 0.5, 6)
+	_wall_z(tile, -1.5, 1.5 - GAP, 6)
 
 
 ## A big loop like the harvesters on Rotten Fields: a parked train car, then a barricade between
 ## its end and a short container.
 func _train_loop(tile: Transform3D) -> void:
 	_train(tile)
-	_barricade(tile, 8, 0)
-	_container(tile * Transform3D(Basis(), Vector3(10.75, 0, 0)), 3.5)
+	_barricade(tile, 7 + GAP, 0)
+	_container(tile * Transform3D(Basis(), Vector3(7 + 2.0 * GAP + 1.75, 0, 0)), 3.5)
 
 
 ## Filler: a barricade between the ends of two short containers. Weak, but it can buy a few
 ## seconds between zones.
 func _rock_pallet(tile: Transform3D) -> void:
-	for x in [-2.75, 2.75]:
+	for x in [-GAP - 1.75, GAP + 1.75]:
 		_container(tile * Transform3D(Basis(), Vector3(x, 0, 0)), 3.5)
 	_barricade(tile, 0, 0)
 
