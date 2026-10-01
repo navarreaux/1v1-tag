@@ -45,7 +45,7 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 | Shift (hold) | Sprint (Runner) |
 | Ctrl or C (hold) | Crouch (Runner) |
 | Mouse | Look around |
-| Space or E | Drop a barricade, vault a window or barricade, break a barricade |
+| Space | Drop a barricade, vault a window or barricade, break a barricade |
 | Left click | Swing (Hunter). Tap for a short lunge, hold to lunge further |
 | Esc | Pause menu (the match keeps going) |
 | Enter | Rematch / play again |
@@ -57,9 +57,11 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 **Runner**
 - Third person, with the camera over the right shoulder. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
 - Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
-- **Vaults** come in three speeds. Sprinting straight at a window for a moment gives a **fast** vault. Sprinting without enough run-up or at an angle gives a **medium** one. Walking or standing gives a **slow** one.
-- Fast vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls.
-- Vault the same window 3 times and it gets **blocked** (red) for 15 seconds.
+- **Window vaults** come in three speeds, as in Dead by Daylight. Sprint straight at a window for at least 2.5 m for a **fast** vault (0.5 s). Sprinting without that run-up, or at an angle, gives a **medium** vault (0.9 s). Walking gives a **slow** one (1.5 s).
+- There's no fixed cooldown between vaults. A fast vault keeps your momentum, so you can chain into another. A medium or slow vault resets it, so you need a fresh 2.5 m run-up before your next fast vault.
+- **Barricade vaults** are fast (1.1 s) when sprinting and slow (2.0 s) when walking.
+- Fast and medium vaults are loud: the Hunter sees a yellow **!** where it happened, even through walls. Slow vaults are silent.
+- Vault the same window 3 times in a chase and it gets **blocked** (red) for 30 seconds.
 - Drop a **barricade** to block a gap. Dropping it on the Hunter **stuns** them.
 - Sprinting leaves orange **scratch marks** that only the Hunter sees. An injured Runner also leaves **blood**.
 - A **heartbeat** plays when the Hunter is within 32 m and gets faster and louder as they come closer.
@@ -69,7 +71,7 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 - **Lunge**: click to swing with a short lunge, or hold to lunge further. Hits within about 2.2 m.
 - After a hit the Hunter **wipes** the blade (2.7 s, slowed). After a miss they **recover** (1.5 s, slowed).
 - **Bloodlust**: after 15, 25 and 35 seconds of continuous chase the Hunter gets faster (+0.2, +0.4, +0.6 m/s). It resets on a hit, a stun, breaking a barricade, or losing the Runner for 8 seconds.
-- Vaults windows slowly (1.7 s). Can't vault barricades; breaks them instead (2.6 s).
+- Vaults windows slowly (1.7 s). Can't vault barricades; breaks them instead (2.34 s).
 
 A round ends when the Runner is downed, or after 5 minutes.
 
