@@ -61,6 +61,11 @@ var injured := false
 var stun := 0.0
 var busy := 0.0  # seconds left in a vault or a barricade break
 var kicking := false  # Hunter winding up a kick at a knocked-over trash can
+## Like Dead by Daylight, changing direction sharply costs speed: this drops when the movement
+## keys swing to a new direction (most for a full reversal) and climbs back to 1 over a moment.
+var momentum := 1.0
+var _last_input := Vector2.ZERO
+var _idle_time := 0.0
 var vaulting := false
 var boost := 0.0  # Runner speed boost after being hit
 
@@ -163,6 +168,8 @@ func set_role(r: Role) -> void:
 	dropped_barricade = -1
 	drop_lock = 0.0
 	kicking = false
+	momentum = 1.0
+	_last_input = Vector2.ZERO
 	_end_chase()
 	_on_busy_done = Callable()
 	_build_model()
@@ -371,8 +378,9 @@ func _move(delta: float) -> void:
 		_set_crouch(want_crouch and not downed)
 		sprinting = want_sprint and not crouching and input.length() > 0.1
 		sprint_held = want_sprint
+	_update_momentum(input, delta)
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
-	var speed := current_speed()
+	var speed := current_speed() * momentum
 	dir = _wall_slide(dir, speed * delta)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
@@ -393,6 +401,27 @@ func _move(delta: float) -> void:
 			i -= 1
 		if i > 0:
 			_sprint_log = _sprint_log.slice(i)
+
+
+## Swinging the movement keys to a new direction costs speed: nothing for gentle changes, a
+## little for a quarter turn (forward to left), the most for a full reversal (left to right).
+## The direction is the keys' own (relative to where you face), so turning the camera is free.
+func _update_momentum(input: Vector2, delta: float) -> void:
+	var slowdown: float = TUNING.hunter_turn_slowdown if role == Role.HUNTER else TUNING.runner_turn_slowdown
+	if input.length() > 0.1:
+		var now := input.normalized()
+		if _last_input != Vector2.ZERO:
+			var change := (1.0 - now.dot(_last_input)) / 2.0  # 0 same way .. 1 opposite
+			# Curved, so small adjustments (forward to forward-left) cost next to nothing.
+			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * pow(change, 1.5)))
+		_last_input = now
+		_idle_time = 0.0
+	else:
+		# Standing still for a moment lets you set off any way you like.
+		_idle_time += delta
+		if _idle_time > TUNING.turn_memory:
+			_last_input = Vector2.ZERO
+	momentum = minf(1.0, momentum + delta / TUNING.turn_recover_time)
 
 
 ## Like Dead by Daylight: running at a wall at a shallow angle slides you along it at full speed

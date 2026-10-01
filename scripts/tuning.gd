@@ -18,6 +18,20 @@ extends Resource
 ## Both the Runner and the Hunter get this.
 @export var wall_slide_max_angle := 45.0
 
+@export_group("Changing direction")
+## Like Dead by Daylight, swinging the movement keys to a new direction costs speed, so
+## spamming left/right is slow and movement has to be deliberate. A full reversal (forward to
+## back, left to right) drops you to (1 - this) of your speed; a quarter turn (forward to left)
+## costs about a third of that; small adjustments almost nothing.
+@export var runner_turn_slowdown := 0.7
+@export var hunter_turn_slowdown := 0.6
+## Never slower than this fraction of full speed from turning.
+@export var turn_min_speed := 0.3
+## Seconds to get from a standstill back to full speed after the slowdown.
+@export var turn_recover_time := 0.8
+## Let go of the keys for this long (seconds) and the next direction is free.
+@export var turn_memory := 0.2
+
 @export_group("Runner vaults")
 ## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast window vault
 ## needs you to have been sprinting at the window, from straight on up to the angle below, for

@@ -58,6 +58,8 @@ The chase copies Dead by Daylight's mechanics as closely as we can (not its art,
 
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
+**Changing direction costs speed**, as in Dead by Daylight. Swing your movement keys from forward to back, or left to right, and you drop to 30% speed (40% for the Hunter), then build back up over about half a second. A quarter turn (forward to left) costs a little; small adjustments almost nothing. Turning the camera is free. So spamming left and right is slow, and moving with intent is fast.
+
 **Runner**
 - Third person, with the camera behind and over the right shoulder so the Runner sits left of center, and an 87° horizontal field of view, like Dead by Daylight. Walks at 2.26 m/s, sprints at 4.0 m/s with Shift, crouches at 1.13 m/s.
 - Two hits take the Runner down: Healthy → Injured → Downed. Each hit gives a short speed burst.
