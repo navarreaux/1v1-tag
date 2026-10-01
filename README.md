@@ -17,9 +17,13 @@ to find out whether the chase is fun.
    folder you unzipped, then click **Import & Edit**.
 4. Press **F5** (or the ▶ play button at the top right) to run the game.
 
-### Try it alone
-Pick **Practice as Runner** or **Practice as Hunter** in the menu to walk around the map and try
-the controls. There's no opponent in practice.
+### Play alone against a bot
+Under **Play alone against a bot**, click **I'm the Runner** or **I'm the Hunter**. The computer
+plays the other side. Each round shows your time; press **Enter** to play another round
+(you keep the same role) or **Esc** for the menu.
+
+- The bot Hunter chases you, swings when close, vaults windows and breaks barricades in its way.
+- The bot Runner runs for the far side of walls, vaults windows, and drops barricades on you.
 
 ### Play both sides on one PC
 1. In Godot's top menu choose **Debug → Customize Run Instances...**
@@ -64,6 +68,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
 | `scripts/arena.gd` | Builds the greybox map |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
+| `scripts/bot.gd` | The computer opponent |
 | `scripts/hud.gd` | On-screen text and the pause menu |
 | `scripts/net.gd` | Hosting and joining (Godot's built-in ENet networking) |
 | `scripts/tuning.gd` | The list of tunable numbers |

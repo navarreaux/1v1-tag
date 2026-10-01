@@ -100,39 +100,40 @@ func _process(delta: float) -> void:
 	_info.text = ""
 	_crosshair.visible = me != null and me.role == Role.HUNTER and game.phase == P.CHASE
 
-	if game.practice:
-		_top.text = "Practice  %s" % format_time(game.clock)
-		_info.text = "Practicing as %s (no opponent). Esc for the menu." % ("Hunter" if me.role == Role.HUNTER else "Runner")
-	else:
-		match game.phase:
-			P.LOBBY:
-				if multiplayer.is_server():
-					var ips := Net.local_addresses()
-					_big.text = "Waiting for an opponent to join...\nYour IP: %s  (port %d)" % [", ".join(ips) if ips.size() > 0 else "127.0.0.1", Net.DEFAULT_PORT]
-					_info.text = "Walk around while you wait. Esc for the menu."
-				else:
-					_big.text = "Connecting to the host..."
-			P.COUNTDOWN:
-				var goal := "Catch the Runner fast!" if me.role == Role.HUNTER else "Survive as long as you can!"
-				_big.text = "Round %d of 2\nYou are the %s\n%s\n\n%d" % [game.round_num, _role_name(me), goal, ceili(game.clock)]
-			P.CHASE:
-				_top.text = "Round %d   %s" % [game.round_num, format_time(game.clock)]
-			P.ROUND_OVER:
-				var r: Dictionary = game.results.back()
-				var who := "You" if r.runner == multiplayer.get_unique_id() else "Your opponent"
-				var why := "The Runner was caught!" if game.last_reason == "downed" else "Time cap reached!"
-				_big.text = "%s\n%s survived %s." % [why, who, format_time(r.time)]
-				if game.round_num == 1:
-					_big.text += "\n\nSwapping roles..."
-			P.MATCH_OVER:
-				_big.text = game.match_summary()
-				_big.text += "\n\nHost: press Enter for a rematch." if multiplayer.is_server() else "\n\nWaiting for the host to start a rematch."
+	match game.phase:
+		P.LOBBY:
+			if multiplayer.is_server():
+				var ips := Net.local_addresses()
+				_big.text = "Waiting for an opponent to join...\nYour IP: %s  (port %d)" % [", ".join(ips) if ips.size() > 0 else "127.0.0.1", Net.DEFAULT_PORT]
+				_info.text = "Walk around while you wait. Esc for the menu."
+			else:
+				_big.text = "Connecting to the host..."
+		P.COUNTDOWN:
+			var goal := "Catch the Runner fast!" if me.role == Role.HUNTER else "Survive as long as you can!"
+			var round_text := "Round %d vs the bot" % game.round_num if game.vs_bot else "Round %d of 2" % game.round_num
+			_big.text = "%s\nYou are the %s\n%s\n\n%d" % [round_text, _role_name(me), goal, ceili(game.clock)]
+		P.CHASE:
+			_top.text = "Round %d   %s" % [game.round_num, format_time(game.clock)]
+		P.ROUND_OVER:
+			var r: Dictionary = game.results.back()
+			var who := "You" if r.runner == multiplayer.get_unique_id() else ("The bot" if game.vs_bot else "Your opponent")
+			var why := "The Runner was caught!" if game.last_reason == "downed" else "Time cap reached!"
+			_big.text = "%s\n%s survived %s." % [why, who, format_time(r.time)]
+			if game.round_num == 1 and not game.vs_bot:
+				_big.text += "\n\nSwapping roles..."
+		P.MATCH_OVER:
+			_big.text = game.match_summary()
+			if game.vs_bot:
+				_big.text += "\n\nPress Enter to play again. Esc for the menu."
+			elif multiplayer.is_server():
+				_big.text += "\n\nHost: press Enter for a rematch."
+			else:
+				_big.text += "\n\nWaiting for the host to start a rematch."
 
 	if me and game.phase == P.CHASE:
-		if not game.practice:
-			_info.text = "You are the %s" % _role_name(me)
-			if me.role == Role.RUNNER:
-				_info.text += "   Health: %s" % ["Downed", "Injured", "Healthy"][clampi(game.runner_health, 0, 2)]
+		_info.text = "You are the %s" % _role_name(me)
+		if me.role == Role.RUNNER:
+			_info.text += "   Health: %s" % ["Downed", "Injured", "Healthy"][clampi(game.runner_health, 0, 2)]
 		if me.stun > 0.0:
 			_prompt.text = "Stunned!"
 		elif me.busy > 0.0 and not me.vaulting:

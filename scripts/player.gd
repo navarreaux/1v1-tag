@@ -15,6 +15,10 @@ const HUNTER_COLOR := Color(0.85, 0.25, 0.2)
 const RUNNER_COLOR := Color(0.25, 0.5, 0.9)
 
 var game: Node  # set by game.gd before this is added
+## Bots are run by the computer that owns them, like a human player, but get no camera.
+var is_bot := false
+## Which way the bot wants to go this frame (same meaning as WASD), set by bot.gd.
+var bot_input := Vector2.ZERO
 var role := Role.RUNNER
 
 var frozen := true  # true during countdowns and between rounds
@@ -60,7 +64,7 @@ func _ready() -> void:
 	# A little visor so you can tell which way the other player is facing.
 	Greybox.box(_body_mesh, Transform3D(Basis(), Vector3(0, 0.5, -0.3)), Vector3(0.4, 0.15, 0.15), Color(0.1, 0.1, 0.1), false)
 
-	if is_multiplayer_authority():
+	if is_multiplayer_authority() and not is_bot:
 		_rig = Node3D.new()
 		_rig.top_level = true
 		add_child(_rig)
@@ -111,7 +115,7 @@ func is_local() -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_local() or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if not is_local() or is_bot or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
 	if event is InputEventMouseMotion:
 		yaw -= event.relative.x * MOUSE_SENSITIVITY
@@ -123,7 +127,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("interact"):
 		game.do_interact(self)
 	elif event.is_action_pressed("attack"):
-		_try_attack()
+		try_attack()
 
 
 func _process(delta: float) -> void:
@@ -173,7 +177,11 @@ func _move(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 	var input := Vector2.ZERO
-	if not (frozen or downed or stun > 0.0 or busy > 0.0) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if frozen or downed or stun > 0.0 or busy > 0.0:
+		pass
+	elif is_bot:
+		input = bot_input
+	elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	var speed := current_speed()
@@ -201,7 +209,7 @@ func current_speed() -> float:
 	return s
 
 
-func _try_attack() -> void:
+func try_attack() -> void:
 	if role != Role.HUNTER or frozen or stun > 0.0 or busy > 0.0 or cooldown > 0.0 or lunge > 0.0:
 		return
 	lunge = TUNING.hunter_lunge_time

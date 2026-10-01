@@ -26,15 +26,22 @@ const RUNNER_SPAWN_YAW := 0.0
 var barricades: Array = []
 ## One transform per window: origin = middle of the window at floor level, basis.z = direction you vault.
 var windows: Array[Transform3D] = []
+## Points worth running to (both sides of every window and barricade); used by the bot.
+var loop_spots: Array[Vector3] = []
+
+## Walkable-area map used by the bot to find paths. All solid geometry lives under it.
+var _nav: NavigationRegion3D
 
 
 func _ready() -> void:
 	_build_environment()
+	_nav = NavigationRegion3D.new()
+	add_child(_nav)
 	var half := SIZE / 2.0
-	Greybox.box(self, Transform3D(Basis(), Vector3(0, -0.5, 0)), Vector3(SIZE + 2, 1, SIZE + 2), FLOOR_COLOR)
+	Greybox.box(_nav, Transform3D(Basis(), Vector3(0, -0.5, 0)), Vector3(SIZE + 2, 1, SIZE + 2), FLOOR_COLOR)
 	for side in [-1, 1]:
-		Greybox.box(self, Transform3D(Basis(), Vector3(0, 1.5, side * (half + 0.5))), Vector3(SIZE + 2, 3, 1), WALL_COLOR)
-		Greybox.box(self, Transform3D(Basis(), Vector3(side * (half + 0.5), 1.5, 0)), Vector3(1, 3, SIZE + 2), WALL_COLOR)
+		Greybox.box(_nav, Transform3D(Basis(), Vector3(0, 1.5, side * (half + 0.5))), Vector3(SIZE + 2, 3, 1), WALL_COLOR)
+		Greybox.box(_nav, Transform3D(Basis(), Vector3(side * (half + 0.5), 1.5, 0)), Vector3(1, 3, SIZE + 2), WALL_COLOR)
 
 	_barricade_loop(_at(-10, -9, 0))
 	_barricade_loop(_at(11, 9, 90))
@@ -43,7 +50,33 @@ func _ready() -> void:
 	_long_wall(_at(-1, 1, 0))
 
 	for rock in [Vector3(-3, 0, -13), Vector3(4, 0, 12), Vector3(-17, 0, 0), Vector3(17, 0, -1), Vector3(-4, 0, 15), Vector3(16, 0, -16)]:
-		Greybox.box(self, Transform3D(Basis(Vector3.UP, rock.x * 0.3), rock + Vector3(0, 1.1, 0)), Vector3(2.2, 2.2, 1.6), ROCK_COLOR)
+		Greybox.box(_nav, Transform3D(Basis(Vector3.UP, rock.x * 0.3), rock + Vector3(0, 1.1, 0)), Vector3(2.2, 2.2, 1.6), ROCK_COLOR)
+	_bake_navigation()
+
+
+func _bake_navigation() -> void:
+	var nm := NavigationMesh.new()
+	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nm.geometry_collision_mask = Greybox.WORLD_LAYER
+	nm.agent_radius = 0.5
+	nm.agent_height = 2.0
+	nm.agent_max_climb = 0.25
+	_nav.navigation_mesh = nm
+	# Barricades are up while baking, so their gaps count as open.
+	_nav.bake_navigation_mesh(false)
+	# Window vaults are shortcuts the path finder may use; they cost extra because vaulting is slow.
+	for w in windows:
+		var link := NavigationLink3D.new()
+		link.start_position = w.origin + w.basis.z * 1.0
+		link.end_position = w.origin - w.basis.z * 1.0
+		link.travel_cost = 3.0
+		_nav.add_child(link)
+	for xf in windows:
+		loop_spots.append(xf.origin + xf.basis.z * 2.0)
+		loop_spots.append(xf.origin - xf.basis.z * 2.0)
+	for b in barricades:
+		loop_spots.append(b.to_global(Vector3(0, 0, 2.0)))
+		loop_spots.append(b.to_global(Vector3(0, 0, -2.0)))
 
 
 ## Puts every barricade back up (start of each round).
@@ -58,20 +91,20 @@ func _at(x: float, z: float, degrees: float) -> Transform3D:
 
 ## A straight wall in tile space, running along X from x0 to x1 at depth z.
 func _wall_x(tile: Transform3D, x0: float, x1: float, z: float) -> void:
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z)), Vector3(x1 - x0, WALL_H, WALL_T), WALL_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z)), Vector3(x1 - x0, WALL_H, WALL_T), WALL_COLOR)
 
 
 ## A straight wall in tile space, running along Z from z0 to z1 at x.
 func _wall_z(tile: Transform3D, z0: float, z1: float, x: float) -> void:
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0)), Vector3(WALL_T, WALL_H, z1 - z0), WALL_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0)), Vector3(WALL_T, WALL_H, z1 - z0), WALL_COLOR)
 
 
 ## A window opening centered at x along a wall at depth z (sill below, lintel above).
 func _window(tile: Transform3D, x: float, z: float) -> void:
 	var size_sill := Vector3(WINDOW_W, SILL_H, WALL_T)
 	var size_top := Vector3(WINDOW_W, WALL_H - LINTEL_Y, WALL_T)
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, SILL_H / 2.0, z)), size_sill, WINDOW_COLOR)
-	Greybox.box(self, tile * Transform3D(Basis(), Vector3(x, (LINTEL_Y + WALL_H) / 2.0, z)), size_top, WINDOW_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, SILL_H / 2.0, z)), size_sill, WINDOW_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, (LINTEL_Y + WALL_H) / 2.0, z)), size_top, WINDOW_COLOR)
 	windows.append(tile * Transform3D(Basis(), Vector3(x, 0, z)))
 
 

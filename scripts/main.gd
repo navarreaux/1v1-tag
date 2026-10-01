@@ -1,5 +1,5 @@
 extends Node
-## The main menu. Starts a hosted game, joins one, or starts solo practice.
+## The main menu. Hosts a game, joins one, or starts a solo game against a bot.
 ##
 ## Shortcut for testing: run the game with "--host" or "--join" after "--" on the
 ## command line (or in Debug > Customize Run Instances) to skip the menu.
@@ -42,9 +42,9 @@ func _join() -> void:
 	_start_game().start_client()
 
 
-func _practice(role: Role) -> void:
+func _vs_bot(role: Role) -> void:
 	Net.leave()
-	_start_game().start_practice(role)
+	_start_game().start_vs_bot(role)
 
 
 func _start_game():
@@ -114,10 +114,25 @@ func _build_menu() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	var sub := Label.new()
-	sub.text = "Prototype. One Hunter, one Runner, two rounds."
+	sub.text = "Prototype. One Hunter chases one Runner."
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(sub)
 
+	var bot_label := Label.new()
+	bot_label.text = "Play alone against a bot:"
+	box.add_child(bot_label)
+	var bot_row := HBoxContainer.new()
+	box.add_child(bot_row)
+	var br := _button("I'm the Runner", _vs_bot.bind(Role.RUNNER))
+	br.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bot_row.add_child(br)
+	var bh := _button("I'm the Hunter", _vs_bot.bind(Role.HUNTER))
+	bh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bot_row.add_child(bh)
+
+	var online_label := Label.new()
+	online_label.text = "Play against a person:"
+	box.add_child(online_label)
 	box.add_child(_button("Host a game", _host))
 	var ip_row := HBoxContainer.new()
 	box.add_child(ip_row)
@@ -127,15 +142,6 @@ func _build_menu() -> void:
 	_ip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ip_row.add_child(_ip)
 	ip_row.add_child(_button("Join", _join))
-
-	var practice_row := HBoxContainer.new()
-	box.add_child(practice_row)
-	var pr := _button("Practice as Runner", _practice.bind(Role.RUNNER))
-	pr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	practice_row.add_child(pr)
-	var ph := _button("Practice as Hunter", _practice.bind(Role.HUNTER))
-	ph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	practice_row.add_child(ph)
 
 	var help := Label.new()
 	help.text = "WASD move   Mouse look   E / Space use (drop, vault, break)\nLeft click swing (Hunter)   Esc pause"

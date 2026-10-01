@@ -11,6 +11,7 @@ const PlayerScript := preload("res://scripts/player.gd")
 const Arena := preload("res://scripts/arena.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const Hud := preload("res://scripts/hud.gd")
+const Bot := preload("res://scripts/bot.gd")
 const TUNING := preload("res://tuning.tres")
 
 const Role := PlayerScript.Role
@@ -19,8 +20,12 @@ enum Phase { LOBBY, COUNTDOWN, CHASE, ROUND_OVER, MATCH_OVER }
 
 const ROUND_OVER_TIME := 5.0
 const HIT_GRACE_MS := 1000
+## The bot's made-up peer id. Real peers never get id 2 (ENet ids are large random numbers).
+const BOT_ID := 2
 
-var practice := false
+## Playing alone against a bot. You keep the role you picked every round.
+var vs_bot := false
+var human_role := Role.RUNNER
 var closing := false
 var phase := Phase.LOBBY
 var round_num := 0
@@ -70,29 +75,20 @@ func start_client() -> void:
 	pass  # The host tells us when to spawn.
 
 
-func start_practice(role: Role) -> void:
-	practice = true
-	_spawn_players([1])
-	hunter_id = 1 if role == Role.HUNTER else 0
-	runner_id = 1 if role == Role.RUNNER else 0
-	var p = players[1]
-	p.set_role(role)
-	if role == Role.HUNTER:
-		p.spawn_at(Arena.HUNTER_SPAWN, Arena.HUNTER_SPAWN_YAW)
-		# Nothing to break otherwise, so start with every barricade dropped.
-		for b in arena.barricades:
-			b.set_state(Barricade.State.DOWN)
-	else:
-		p.spawn_at(Arena.RUNNER_SPAWN, Arena.RUNNER_SPAWN_YAW)
-	p.frozen = false
-	phase = Phase.CHASE
-	clock = 0.0
+func start_vs_bot(role: Role) -> void:
+	vs_bot = true
+	human_role = role
+	_spawn_players([1, BOT_ID])
+	var bot := Bot.new()
+	bot.game = self
+	players[BOT_ID].add_child(bot)
+	_begin_round(1)
 
 
 # --- Connection events ---------------------------------------------------
 
 func _on_peer_connected(id: int) -> void:
-	if closing or practice or not multiplayer.is_server():
+	if closing or vs_bot or not multiplayer.is_server():
 		return
 	_spawn_players.rpc([1, id])
 	_begin_round(1)
@@ -124,17 +120,17 @@ func _process(delta: float) -> void:
 				_set_phase.rpc(Phase.CHASE)
 		Phase.CHASE:
 			clock += delta
-			if host and not practice and clock >= TUNING.round_time_cap:
+			if host and clock >= TUNING.round_time_cap:
 				_finish_round("time")
 		Phase.ROUND_OVER:
 			clock -= delta
 			if host and clock <= 0.0:
-				if round_num == 1:
+				if round_num == 1 and not vs_bot:
 					_begin_round(2)
 				else:
 					_end_match.rpc()
 				return
-	if host and not practice and phase != Phase.LOBBY:
+	if host and not vs_bot and phase != Phase.LOBBY:
 		_clock_send -= delta
 		if _clock_send <= 0.0:
 			_clock_send = 0.2
@@ -143,7 +139,7 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("rematch") and phase == Phase.MATCH_OVER and multiplayer.is_server():
-		_begin_round(1)
+		_begin_round(1 if not vs_bot else round_num + 1)
 
 
 # --- Helpers used by players and the HUD ---------------------------------
@@ -154,6 +150,10 @@ func local_player() -> Node:
 
 func get_runner() -> Node:
 	return players.get(runner_id)
+
+
+func is_chasing() -> bool:
+	return phase == Phase.CHASE
 
 
 ## What the player could do right now by pressing the interact key, or {} if nothing.
@@ -209,9 +209,18 @@ func _sender() -> int:
 	return id if id != 0 else multiplayer.get_unique_id()
 
 
+## True if the request came from the computer that controls `player_id` (the host runs the bot).
+func _sent_by(player_id: int) -> bool:
+	return _sender() == (1 if player_id == BOT_ID else player_id)
+
+
 # --- Host-only round flow ------------------------------------------------
 
 func _begin_round(n: int) -> void:
+	if vs_bot:
+		var human_hunts := human_role == Role.HUNTER
+		_start_round.rpc(n, 1 if human_hunts else BOT_ID, BOT_ID if human_hunts else 1)
+		return
 	var other := 0
 	for id in players:
 		if id != 1:
@@ -231,7 +240,7 @@ func _finish_round(reason: String) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func request_hit() -> void:
-	if not multiplayer.is_server() or phase != Phase.CHASE or _sender() != hunter_id:
+	if not multiplayer.is_server() or phase != Phase.CHASE or not _sent_by(hunter_id):
 		return
 	var hunter = players.get(hunter_id)
 	var runner = get_runner()
@@ -251,7 +260,7 @@ func request_hit() -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func request_drop(index: int) -> void:
-	if not multiplayer.is_server() or phase != Phase.CHASE or _sender() != runner_id:
+	if not multiplayer.is_server() or phase != Phase.CHASE or not _sent_by(runner_id):
 		return
 	var b = arena.barricades[index]
 	if b.state != Barricade.State.UP:
@@ -264,7 +273,7 @@ func request_drop(index: int) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func request_break(index: int) -> void:
-	if not multiplayer.is_server() or phase != Phase.CHASE or _sender() != hunter_id:
+	if not multiplayer.is_server() or phase != Phase.CHASE or not _sent_by(hunter_id):
 		return
 	if arena.barricades[index].state == Barricade.State.DOWN:
 		_set_barricade.rpc(index, Barricade.State.BROKEN)
@@ -282,7 +291,8 @@ func _spawn_players(ids: Array) -> void:
 		var p := PlayerScript.new()
 		p.name = str(id)
 		p.game = self
-		p.set_multiplayer_authority(id)
+		p.is_bot = id == BOT_ID
+		p.set_multiplayer_authority(1 if p.is_bot else id)
 		_players_root.add_child(p)
 		players[id] = p
 		p.spawn_at(Arena.RUNNER_SPAWN, Arena.RUNNER_SPAWN_YAW)
@@ -341,9 +351,10 @@ func _set_runner_health(health: int) -> void:
 func _set_barricade(index: int, state: Barricade.State) -> void:
 	var b = arena.barricades[index]
 	b.set_state(state)
-	var me = local_player()
-	if state == Barricade.State.DOWN and me and b.in_zone(me.global_position):
-		me.push_out_of(b)
+	if state == Barricade.State.DOWN:
+		for p in players.values():
+			if p.is_local() and b.in_zone(p.global_position):
+				p.push_out_of(b)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -371,6 +382,8 @@ func _end_match() -> void:
 
 ## Text for the end-of-match screen, from this computer's point of view.
 func match_summary() -> String:
+	if vs_bot:
+		return _bot_summary()
 	var me := multiplayer.get_unique_id()
 	var mine := 0.0
 	var theirs := 0.0
@@ -387,3 +400,13 @@ func match_summary() -> String:
 	else:
 		lines += "YOU LOSE."
 	return lines
+
+
+func _bot_summary() -> String:
+	var last: Dictionary = results.back()
+	var times: Array = results.map(func(r): return r.time)
+	if last_reason == "time":
+		return "Time cap reached! The bot survived %s." % Hud.format_time(last.time)
+	if human_role == Role.RUNNER:
+		return "You survived %s.\nYour best this session: %s" % [Hud.format_time(last.time), Hud.format_time(times.max())]
+	return "You caught the bot in %s.\nYour fastest catch this session: %s" % [Hud.format_time(last.time), Hud.format_time(times.min())]
