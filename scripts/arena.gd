@@ -2,7 +2,7 @@ extends Node3D
 ## The maps, built in code. Set `map_id` before adding the arena to the tree.
 ##
 ## Rotten Fields (map 0): a sunny subway yard laid out like Dead by Daylight's Rotten Fields. A grid of
-## 24 m cells inside a stepped outer wall (144 x 192 m at its widest). Cells around the edge, at
+## 16 m cells inside a stepped outer wall (96 x 128 m at its widest). Cells around the edge, at
 ## clock positions, hold tiles: wall pairs, T walls, a bent wall, the one long wall, and big train
 ## loops at 1, 7 and 10 o'clock. A shack sits in the very middle with a tile above and below it;
 ## the rest is sparse filler (shipping containers, lamp posts, container barricades).
@@ -24,6 +24,7 @@ const Barricade := preload("res://scripts/barricade.gd")
 const TUNING := preload("res://tuning.tres")
 
 const CELL := 24.0
+const RF_SCALE := 2.0 / 3.0
 ## The outer wall, going clockwise. Walls stand just outside these lines.
 const OUTLINE := [Vector2(-48, -96), Vector2(24, -96), Vector2(24, -72), Vector2(48, -72), Vector2(48, -48),
 	Vector2(72, -48), Vector2(72, 72), Vector2(48, 72), Vector2(48, 96), Vector2(-24, 96), Vector2(-24, 72),
@@ -52,10 +53,10 @@ const DEPOT := Vector3(-24, 0, -72)
 
 enum Tile { T_WALL, L_WINDOW, L_BARRICADE, JUNGLE_GYM, SHACK, LONG_WALL, BARRICADE_LOOP, BENT_WALL,
 	L_PAIR, TRAIN_LOOP }
-## One tile per pictured cell: [tile, x, z, degrees]. Cell centers are multiples of 24 m.
+## One tile per pictured cell: [tile, x, z, degrees]. Drawn on 24 m cells, then built at RF_SCALE (2/3) size.
 ## The long wall (two walls with a window between) is very strong, so there is only one.
 const TILES := [
-	[Tile.L_PAIR, 0, -72, 0],  # 12 o'clock
+	[Tile.L_PAIR, 6, -72, 0],  # 12 o'clock
 	[Tile.TRAIN_LOOP, 24, -48, -45],  # 1
 	[Tile.L_PAIR, 48, 0, 90],  # 3
 	[Tile.BENT_WALL, 48, 48, 200],  # 4
@@ -70,7 +71,7 @@ const TILES := [
 ## Filler in the other cells: [x, z, degrees].
 const ROCK_PALLETS := [[-24, -26, 45], [48, -22, 0], [-46, 24, 90], [24, 22, -45], [-62, 0, 90],
 	[62, 40, 90], [24, 84, 0]]
-const ROCKS := [[-21, -45], [27, -21], [-26, 3], [22, 5], [-20, 27], [26, 45], [-50, -20], [3, 50], [40, 56],
+const ROCKS := [[-21, -45], [27, -21], [-26, 3], [22, 5], [-20, 27], [26, 45], [-60, -20], [3, 50], [54, 62],
 	[-64, -32], [64, 16], [64, -36], [-64, 32], [36, 86], [-40, -86], [-36, 62], [14, -86]]
 const LAMPS := [[0, -46], [50, 26], [24, 72], [-44, -28], [18, 10], [-28, -50], [-12, -12], [12, 12],
 	[-12, 12], [12, -12], [-46, 46], [30, -64], [-64, 0], [64, 0], [10, 88], [-10, -88]]
@@ -83,10 +84,10 @@ const LS_STATION := Vector3(8, 0, -8)
 
 ## Which map to build, and where each player starts on it.
 var map_id := Map.ROTTEN_FIELDS
-var runner_spawn := Vector3(-16.75, 0, -72)
-var runner_spawn_yaw := PI  # facing along the corridor
-var hunter_spawn := Vector3(-8, 0, -52)
-var hunter_spawn_yaw := 0.675  # facing the depot
+var runner_spawn := Vector3.ZERO
+var runner_spawn_yaw := 0.0
+var hunter_spawn := Vector3.ZERO
+var hunter_spawn_yaw := 0.0
 
 ## Barricade nodes, in a fixed order so peers can refer to them by index.
 var barricades: Array = []
@@ -124,16 +125,26 @@ func _ready() -> void:
 
 
 func _build_rotten_fields() -> void:
-	_outline(OUTLINE, Vector3(0, 0, 0), Vector2(148, 196))
-	_depot(_at(DEPOT.x, DEPOT.z, 0))
+	# The layout below is drawn on 24 m cells; it's built at 2/3 size (16 m cells, 96 x 128 m) so
+	# it's about as packed as The Last Stop. Tiles keep their own size; only positions shrink.
+	var k := RF_SCALE
+	var outline := []
+	for p: Vector2 in OUTLINE:
+		outline.append(p * k)
+	_outline(outline, Vector3.ZERO, Vector2(100, 132))
+	_depot(_at(DEPOT.x * k, DEPOT.z * k, 0))
+	runner_spawn = DEPOT * k + Vector3(7.25, 0, 0)
+	runner_spawn_yaw = PI  # facing along the corridor
+	hunter_spawn = Vector3(4, 0, -30)  # about 20 m away
+	hunter_spawn_yaw = 0.838  # facing the depot
 	for t in TILES:
-		_tile(t[0], _at(t[1], t[2], t[3]))
+		_tile(t[0], _at(t[1] * k, t[2] * k, t[3]))
 	for f in ROCK_PALLETS:
-		_rock_pallet(_at(f[0], f[1], f[2]))
+		_rock_pallet(_at(f[0] * k, f[1] * k, f[2]))
 	for r in ROCKS:
-		_rock(Vector3(r[0], 0, r[1]))
+		_rock(Vector3(r[0] * k, 0, r[1] * k))
 	for l in LAMPS:
-		_lamp(Vector3(l[0], 0, l[1]))
+		_lamp(Vector3(l[0] * k, 0, l[1] * k))
 
 
 ## The floor (a `floor_size` rectangle centered on `center`) and a solid wall around `outline`.

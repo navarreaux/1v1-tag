@@ -21,8 +21,8 @@ extends Resource
 @export_group("Changing direction")
 ## Like Dead by Daylight, swinging the movement keys to a new direction costs speed, so
 ## spamming left/right is slow and movement has to be deliberate. A full reversal (forward to
-## back, left to right) drops you to (1 - this) of your speed; a quarter turn (forward to left)
-## costs about a third of that; small adjustments almost nothing.
+## back, left to right) drops you to (1 - this) of your speed. Turns up to a quarter turn
+## (forward to forward-left to left) keep all your speed.
 @export var runner_turn_slowdown := 0.7
 @export var hunter_turn_slowdown := 0.6
 ## Never slower than this fraction of full speed from turning.
@@ -31,20 +31,23 @@ extends Resource
 @export var turn_recover_time := 0.8
 ## Let go of the keys for this long (seconds) and the next direction is free.
 @export var turn_memory := 0.2
+## Seconds for your "current direction" to catch up with the keys. Shorter = quicker
+## back-and-forth zig-zags (W, A, S) count as gentle turns instead of reversals.
+@export var turn_follow_time := 0.25
 
 @export_group("Runner vaults")
 ## Like Dead by Daylight there is no fixed cooldown between vaults. Instead, a fast window vault
 ## needs you to have been sprinting at the window, from straight on up to the angle below, for
 ## at least this many seconds. Sprinting at it without that gives a medium vault; walking, slow.
-@export var fast_vault_sprint_time := 0.75
+@export var fast_vault_sprint_time := 0.5
 ## How far off straight-on (in degrees) you can be and still fast vault.
-@export var fast_vault_max_angle := 45.0
+@export var fast_vault_max_angle := 55.0
 @export var window_vault_fast := 0.5
 @export var window_vault_medium := 0.9
 @export var window_vault_slow := 1.5
 ## Barricades only have two speeds: holding Shift while pressing Space slides over fast,
 ## otherwise it's slow.
-@export var barricade_vault_fast := 1.1
+@export var barricade_vault_fast := 0.55
 @export var barricade_vault_slow := 2.0
 ## Fast vaulting the window you just vaulted needs this much longer a sprint (1.5 = 50% more).
 @export var revault_sprint_mult := 1.5
