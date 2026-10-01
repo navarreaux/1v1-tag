@@ -65,6 +65,7 @@ var kicking := false  # Hunter winding up a kick at a knocked-over trash can
 ## keys swing to a new direction (most for a full reversal) and climbs back to 1 over a moment.
 var momentum := 1.0
 var _last_input := Vector2.ZERO
+var _last_keys := Vector2.ZERO  # the keys held last frame
 var _idle_time := 0.0
 var vaulting := false
 var boost := 0.0  # Runner speed boost after being hit
@@ -392,7 +393,7 @@ func _move(delta: float) -> void:
 	if role == Role.RUNNER:
 		var flat := get_real_velocity()
 		flat.y = 0.0
-		var full_speed := sprinting and flat.length() >= TUNING.runner_sprint_speed * 0.9
+		var full_speed := sprinting and flat.length() >= TUNING.runner_sprint_speed * 0.8
 		_sprint_log.append([delta, flat if full_speed else Vector3.ZERO])
 		var kept := 0.0
 		var i := _sprint_log.size() - 1
@@ -410,13 +411,18 @@ func _update_momentum(input: Vector2, delta: float) -> void:
 	var slowdown: float = TUNING.hunter_turn_slowdown if role == Role.HUNTER else TUNING.runner_turn_slowdown
 	if input.length() > 0.1:
 		var now := input.normalized()
-		if _last_input != Vector2.ZERO:
-			# 0 same way .. 1 opposite. Clamped: rounding can push the dot product a hair past 1,
-			# and pow() of a negative number is NaN, which would fling the player off the map.
-			var change := clampf((1.0 - now.dot(_last_input)) / 2.0, 0.0, 1.0)
-			# Curved, so small adjustments (forward to forward-left) cost next to nothing.
-			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * pow(change, 1.5)))
-		_last_input = now
+		if _last_input == Vector2.ZERO:
+			_last_input = now
+		# Only turning back on yourself costs speed: rolling from forward through forward-left
+		# to left (or snapping straight to left) is free; left to right is the full penalty.
+		# _last_input trails the keys by a moment, so W, A, S tapped in quick succession still
+		# counts as a reversal. Clamped, since rounding can push the dot product past 1.
+		if now.dot(_last_keys) < 0.99:  # charged once, when the keys change
+			var change := clampf(-now.dot(_last_input), 0.0, 1.0)
+			momentum = minf(momentum, maxf(TUNING.turn_min_speed, 1.0 - slowdown * change))
+		_last_keys = now
+		var turned := _last_input.lerp(now, minf(1.0, delta / TUNING.turn_follow_time))
+		_last_input = turned.normalized() if turned.length() > 0.05 else now
 		_idle_time = 0.0
 	else:
 		# Standing still for a moment lets you set off any way you like.

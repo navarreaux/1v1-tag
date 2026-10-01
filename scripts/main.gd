@@ -6,11 +6,15 @@ extends Node
 
 const GameScript := preload("res://scripts/game.gd")
 const Role := preload("res://scripts/player.gd").Role
+const Arena := preload("res://scripts/arena.gd")
 
 var game
 var _menu: CanvasLayer
 var _ip: LineEdit
 var _status: Label
+var _map_box: VBoxContainer  # map choice, shown after picking a role for a bot game
+var _map_label: Label
+var _pending_role := Role.RUNNER
 
 
 func _ready() -> void:
@@ -42,14 +46,24 @@ func _join() -> void:
 	_start_game().start_client()
 
 
-func _vs_bot(role: Role) -> void:
+## Picked a role for a bot game: now pick the map.
+func _pick_role(role: Role) -> void:
+	_pending_role = role
+	_map_label.text = "Pick a map (you're the %s):" % ("Runner" if role == Role.RUNNER else "Hunter")
+	_map_box.show()
+
+
+func _vs_bot(role: Role, map := 0) -> void:
 	Net.leave()
-	_start_game().start_vs_bot(role)
+	_map_box.hide()
+	var g = _start_game(map)
+	g.start_vs_bot(role)
 
 
-func _start_game():
+func _start_game(map := 0):
 	_menu.hide()
 	game = GameScript.new()
+	game.map_id = map  # online games always use the first map, so both computers build the same one
 	game.name = "Game"  # must be the same on both computers so messages find it
 	game.exit_to_menu.connect(_back_to_menu)
 	add_child(game)
@@ -125,12 +139,23 @@ func _build_menu() -> void:
 	box.add_child(bot_label)
 	var bot_row := HBoxContainer.new()
 	box.add_child(bot_row)
-	var br := _button("I'm the Runner", _vs_bot.bind(Role.RUNNER))
+	var br := _button("I'm the Runner", _pick_role.bind(Role.RUNNER))
 	br.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bot_row.add_child(br)
-	var bh := _button("I'm the Hunter", _vs_bot.bind(Role.HUNTER))
+	var bh := _button("I'm the Hunter", _pick_role.bind(Role.HUNTER))
 	bh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bot_row.add_child(bh)
+	_map_box = VBoxContainer.new()
+	box.add_child(_map_box)
+	_map_label = Label.new()
+	_map_box.add_child(_map_label)
+	var map_row := HBoxContainer.new()
+	_map_box.add_child(map_row)
+	for i in Arena.MAP_NAMES.size():
+		var mb := _button(Arena.MAP_NAMES[i], func(): _vs_bot(_pending_role, i))
+		mb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		map_row.add_child(mb)
+	_map_box.hide()
 
 	var online_label := Label.new()
 	online_label.text = "Play against a person:"
@@ -146,7 +171,7 @@ func _build_menu() -> void:
 	ip_row.add_child(_button("Join", _join))
 
 	var help := Label.new()
-	help.text = "WASD move   Shift sprint   Ctrl crouch   Mouse look\nSpace drop, vault, break   Left click swing (hold to lunge)   Esc pause"
+	help.text = "WASD move   Shift sprint   Ctrl crouch   Mouse look\nSpace knock over / vault / slide / kick   Left click swing (hold to lunge)   Esc pause"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.modulate = Color(1, 1, 1, 0.7)
 	box.add_child(help)

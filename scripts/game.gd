@@ -26,6 +26,7 @@ const BOT_ID := 2
 
 ## Playing alone against a bot. You keep the role you picked every round.
 var vs_bot := false
+var map_id := 0  # which map to build (set before adding the game); see arena.gd
 var bot_frozen := false  # dev key F6: the bot stands still and does nothing
 var human_role := Role.RUNNER
 var closing := false
@@ -52,6 +53,7 @@ var _clock_send := 0.0
 func _ready() -> void:
 	arena = Arena.new()
 	arena.name = "Arena"
+	arena.map_id = map_id
 	add_child(arena)
 	_players_root = Node3D.new()
 	_players_root.name = "Players"
@@ -342,7 +344,7 @@ func _spawn_players(ids: Array) -> void:
 		p.set_multiplayer_authority(1 if p.is_bot else id)
 		_players_root.add_child(p)
 		players[id] = p
-		p.spawn_at(Arena.RUNNER_SPAWN, Arena.RUNNER_SPAWN_YAW)
+		p.spawn_at(arena.runner_spawn, arena.runner_spawn_yaw)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -358,9 +360,9 @@ func _start_round(n: int, hunter: int, runner: int) -> void:
 		var p = players[id]
 		p.set_role(Role.HUNTER if id == hunter else Role.RUNNER)
 		if id == hunter:
-			p.spawn_at(Arena.HUNTER_SPAWN, Arena.HUNTER_SPAWN_YAW)
+			p.spawn_at(arena.hunter_spawn, arena.hunter_spawn_yaw)
 		else:
-			p.spawn_at(Arena.RUNNER_SPAWN, Arena.RUNNER_SPAWN_YAW)
+			p.spawn_at(arena.runner_spawn, arena.runner_spawn_yaw)
 		p.frozen = true
 	_last_hit_ms = -HIT_GRACE_MS
 	phase = Phase.COUNTDOWN
