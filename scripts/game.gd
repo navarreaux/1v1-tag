@@ -161,6 +161,11 @@ func is_chasing() -> bool:
 	return phase == Phase.CHASE
 
 
+## True during the Runner's head start at the beginning of the chase, when the Hunter can't act yet.
+func hunter_held() -> bool:
+	return phase == Phase.CHASE and clock < TUNING.runner_head_start
+
+
 ## What the player could do right now by pressing the interact key, or {} if nothing.
 func find_interaction(p: Node) -> Dictionary:
 	if phase != Phase.CHASE or p.busy > 0.0 or p.stun > 0.0 or p.downed or p.vaulting:
@@ -191,6 +196,8 @@ func find_interaction(p: Node) -> Dictionary:
 
 
 func do_interact(p: Node) -> void:
+	if p.role == Role.HUNTER and hunter_held():
+		return
 	var it := find_interaction(p)
 	if it.is_empty():
 		return
