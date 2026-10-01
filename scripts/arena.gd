@@ -1,12 +1,15 @@
 extends Node3D
-## The greybox map: a 40 x 40 m walled field with a few "tiles" to loop around.
+## The greybox map: an 80 x 80 m walled field laid out like a Dead by Daylight map.
+## A strong main building sits in the middle, where both players start. Four zones of dense
+## tiles (T walls, L walls, jungle gyms, shacks) sit in the corners, joined by sparse filler:
+## rocks, trees and rock barricades.
 ## Every player builds the same map from this code, so nothing about it is sent over the network.
 
 const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
 const TUNING := preload("res://tuning.tres")
 
-const SIZE := 40.0
+const SIZE := 80.0
 const WALL_H := 2.6
 const WALL_T := 0.4
 const WINDOW_W := 1.4
@@ -15,13 +18,33 @@ const LINTEL_Y := 2.0
 
 const FLOOR_COLOR := Color(0.25, 0.32, 0.22)
 const WALL_COLOR := Color(0.5, 0.5, 0.48)
+const MAIN_COLOR := Color(0.55, 0.47, 0.4)
 const WINDOW_COLOR := Color(0.45, 0.55, 0.7)
 const ROCK_COLOR := Color(0.48, 0.45, 0.42)
+const TREE_COLOR := Color(0.3, 0.22, 0.15)
 
-const HUNTER_SPAWN := Vector3(0, 0, -16)
-const HUNTER_SPAWN_YAW := PI  # facing the middle
-const RUNNER_SPAWN := Vector3(0, 0, 16)
-const RUNNER_SPAWN_YAW := 0.0
+## The Runner starts inside the main building; the Hunter starts outside it, facing it.
+const HUNTER_SPAWN := Vector3(0, 0, -20)
+const HUNTER_SPAWN_YAW := PI
+const RUNNER_SPAWN := Vector3(-3.5, 0, 0)
+const RUNNER_SPAWN_YAW := -PI / 2.0
+
+## Each zone is a 2 x 2 grid of tiles around its center. Tiles fit within about 4.5 m of their middle.
+const ZONE_SLOT := 6.5
+enum Tile { T_WALL, L_WINDOW, L_BARRICADE, JUNGLE_GYM, SHACK, LONG_WALL, BARRICADE_LOOP }
+## Per zone: [center, [tile, degrees] x 4 for the slots (-,-), (+,-), (-,+), (+,+)].
+const ZONES := [
+	[Vector2(-24, -24), [[Tile.T_WALL, 0], [Tile.JUNGLE_GYM, 0], [Tile.LONG_WALL, 90], [Tile.L_WINDOW, 180]]],
+	[Vector2(24, -24), [[Tile.SHACK, 90], [Tile.T_WALL, 90], [Tile.BARRICADE_LOOP, 0], [Tile.L_BARRICADE, 270]]],
+	[Vector2(-24, 24), [[Tile.JUNGLE_GYM, 90], [Tile.L_BARRICADE, 0], [Tile.SHACK, 180], [Tile.T_WALL, 180]]],
+	[Vector2(24, 24), [[Tile.LONG_WALL, 0], [Tile.L_WINDOW, 90], [Tile.T_WALL, 270], [Tile.JUNGLE_GYM, 180]]],
+]
+## Filler between the zones: [x, z, degrees].
+const ROCK_PALLETS := [[0, -28, 0], [0, 28, 0], [-28, 0, 90], [28, 0, 90]]
+const ROCKS := [[-8, -14], [8, -15], [-14, 8], [15, 8], [-6, -31], [6, -35], [-7, 34], [5, 24], [-33, -6],
+	[-30, 7], [34, -6], [32, 7], [-19, -2], [19, 1], [-3, 15], [12, -7]]
+const TREES := [[-7, -22], [7, -26], [4, -12], [-8, 12], [8, 15], [-4, 26], [7, 31], [-21, -8], [-26, 7],
+	[22, -8], [26, 8], [-37, 2], [37, -2], [2, 37], [-2, -37], [14, -2], [-15, 2]]
 
 ## Barricade nodes, in a fixed order so peers can refer to them by index.
 var barricades: Array = []
@@ -36,6 +59,7 @@ var loop_spots: Array[Vector3] = []
 
 ## Walkable-area map used by the bot to find paths. All solid geometry lives under it.
 var _nav: NavigationRegion3D
+var _wall_color := WALL_COLOR
 
 
 func _ready() -> void:
@@ -48,14 +72,19 @@ func _ready() -> void:
 		Greybox.box(_nav, Transform3D(Basis(), Vector3(0, 1.5, side * (half + 0.5))), Vector3(SIZE + 2, 3, 1), WALL_COLOR)
 		Greybox.box(_nav, Transform3D(Basis(), Vector3(side * (half + 0.5), 1.5, 0)), Vector3(1, 3, SIZE + 2), WALL_COLOR)
 
-	_barricade_loop(_at(-10, -9, 0))
-	_barricade_loop(_at(11, 9, 90))
-	_window_house(_at(10, -9, 0))
-	_window_house(_at(-11, 9, 180))
-	_long_wall(_at(-1, 1, 0))
-
-	for rock in [Vector3(-3, 0, -13), Vector3(4, 0, 12), Vector3(-17, 0, 0), Vector3(17, 0, -1), Vector3(-4, 0, 15), Vector3(16, 0, -16)]:
-		Greybox.box(_nav, Transform3D(Basis(Vector3.UP, rock.x * 0.3), rock + Vector3(0, 1.1, 0)), Vector3(2.2, 2.2, 1.6), ROCK_COLOR)
+	_main_building(_at(0, 0, 0))
+	for zone in ZONES:
+		var c: Vector2 = zone[0]
+		var slots := [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]
+		for i in 4:
+			var pos: Vector2 = c + slots[i] * ZONE_SLOT
+			_tile(zone[1][i][0], _at(pos.x, pos.y, zone[1][i][1]))
+	for f in ROCK_PALLETS:
+		_rock_pallet(_at(f[0], f[1], f[2]))
+	for r in ROCKS:
+		_rock(Vector3(r[0], 0, r[1]))
+	for t in TREES:
+		Greybox.box(_nav, Transform3D(Basis(), Vector3(t[0], 3.0, t[1])), Vector3(0.7, 6.0, 0.7), TREE_COLOR)
 	_bake_navigation()
 
 
@@ -119,12 +148,12 @@ func _at(x: float, z: float, degrees: float) -> Transform3D:
 
 ## A straight wall in tile space, running along X from x0 to x1 at depth z.
 func _wall_x(tile: Transform3D, x0: float, x1: float, z: float) -> void:
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z)), Vector3(x1 - x0, WALL_H, WALL_T), WALL_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3((x0 + x1) / 2.0, WALL_H / 2.0, z)), Vector3(x1 - x0, WALL_H, WALL_T), _wall_color)
 
 
 ## A straight wall in tile space, running along Z from z0 to z1 at x.
 func _wall_z(tile: Transform3D, z0: float, z1: float, x: float) -> void:
-	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0)), Vector3(WALL_T, WALL_H, z1 - z0), WALL_COLOR)
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, WALL_H / 2.0, (z0 + z1) / 2.0)), Vector3(WALL_T, WALL_H, z1 - z0), _wall_color)
 
 
 ## A window opening centered at x along a wall at depth z (sill below, lintel above).
@@ -141,23 +170,105 @@ func _window(tile: Transform3D, x: float, z: float) -> void:
 	_window_blockers.append(blocker)
 
 
-func _barricade(tile: Transform3D, x: float, z: float) -> void:
+## A window in a wall that runs along Z, centered at z.
+func _window_z(tile: Transform3D, z: float, x: float) -> void:
+	_window(tile * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, 0, z)), 0, 0)
+
+
+## A barricade standing in a 2 m gap centered at (x, z). At 0 degrees the gap runs along X.
+func _barricade(tile: Transform3D, x: float, z: float, degrees := 0.0) -> void:
 	var b := Barricade.new()
-	b.transform = tile * Transform3D(Basis(), Vector3(x, 0, z))
+	b.transform = tile * Transform3D(Basis(Vector3.UP, deg_to_rad(degrees)), Vector3(x, 0, z))
 	add_child(b)
 	barricades.append(b)
 
 
-## Tile 1: a wall with a barricade in the middle. Loop around the ends or through the gap.
-func _barricade_loop(tile: Transform3D) -> void:
-	_wall_x(tile, -4.5, -1.0, 0)
-	_barricade(tile, 0, 0)
-	_wall_x(tile, 1.0, 4.5, 0)
-	_wall_z(tile, -2.5, 0.2, -4.5)
+func _rock(pos: Vector3) -> void:
+	Greybox.box(_nav, Transform3D(Basis(Vector3.UP, pos.x * 0.3 + pos.z * 0.1), pos + Vector3(0, 1.0, 0)), Vector3(2.2, 2.0, 1.6), ROCK_COLOR)
 
 
-## Tile 2: a 6 x 6 m room with a doorway on one side and a vault window on the other.
-func _window_house(tile: Transform3D) -> void:
+func _tile(kind: Tile, tile: Transform3D) -> void:
+	match kind:
+		Tile.T_WALL: _t_wall(tile)
+		Tile.L_WINDOW: _l_window(tile)
+		Tile.L_BARRICADE: _l_barricade(tile)
+		Tile.JUNGLE_GYM: _jungle_gym(tile)
+		Tile.SHACK: _shack(tile)
+		Tile.LONG_WALL: _long_wall(tile)
+		Tile.BARRICADE_LOOP: _barricade_loop(tile)
+
+
+## The main building: a big two-room house with three windows (one is the "god window" in the
+## middle wall), a barricade in a side door, and doorways to loop through. Both players start here.
+func _main_building(tile: Transform3D) -> void:
+	_wall_color = MAIN_COLOR
+	var w := WINDOW_W / 2.0
+	var e := WALL_T / 2.0
+	# North wall: window on the left, doorway on the right.
+	_wall_x(tile, -7 - e, -3 - w, -5)
+	_window(tile, -3, -5)
+	_wall_x(tile, -3 + w, 2, -5)
+	_wall_x(tile, 4, 7 + e, -5)
+	# South wall: doorway on the left, window on the right.
+	_wall_x(tile, -7 - e, -4, 5)
+	_wall_x(tile, -2, 4 - w, 5)
+	_window(tile, 4, 5)
+	_wall_x(tile, 4 + w, 7 + e, 5)
+	# West wall is solid; the east wall has a barricade in its doorway.
+	_wall_z(tile, -5, 5, -7)
+	_wall_z(tile, -5, -1, 7)
+	_barricade(tile, 7, 0, 90)
+	_wall_z(tile, 1, 5, 7)
+	# Middle wall with the god window and an inside doorway.
+	_wall_z(tile, -5 + e, -2.5 - w, 0)
+	_window_z(tile, -2.5, 0)
+	_wall_z(tile, -2.5 + w, 1.5, 0)
+	_wall_z(tile, 3.3, 5 - e, 0)
+	_wall_color = WALL_COLOR
+
+
+## A T: a long wall with a stem coming off its middle. The stem has a barricade in it.
+func _t_wall(tile: Transform3D) -> void:
+	_wall_x(tile, -4.5, 4.5, -3)
+	_wall_z(tile, -3 + WALL_T / 2.0, -1, 0)
+	_barricade(tile, 0, 0, 90)
+	_wall_z(tile, 1, 3, 0)
+
+
+## An L with a window in its long side.
+func _l_window(tile: Transform3D) -> void:
+	var w := WINDOW_W / 2.0
+	_wall_x(tile, -4, -1 - w, -3)
+	_window(tile, -1, -3)
+	_wall_x(tile, -1 + w, 3 + WALL_T / 2.0, -3)
+	_wall_z(tile, -3 + WALL_T / 2.0, 3, 3)
+
+
+## An L with a barricade in its short side.
+func _l_barricade(tile: Transform3D) -> void:
+	_wall_x(tile, -4, 2 + WALL_T / 2.0, -3)
+	_wall_z(tile, -3 + WALL_T / 2.0, -0.5, 2)
+	_barricade(tile, 2, 0.5, 90)
+	_wall_z(tile, 1.5, 3, 2)
+
+
+## A jungle gym: two Ls facing each other around a 7 m square, one with a window, plus a barricade
+## in one of the gaps between them.
+func _jungle_gym(tile: Transform3D) -> void:
+	var h := 3.5
+	var w := WINDOW_W / 2.0
+	var e := WALL_T / 2.0
+	_wall_x(tile, -h - e, -1 - w, -h)
+	_window(tile, -1, -h)
+	_wall_x(tile, -1 + w, 1, -h)
+	_barricade(tile, 2, -h)
+	_wall_z(tile, -h + e, 1, -h)
+	_wall_x(tile, -1, h + e, h)
+	_wall_z(tile, -1, h - e, h)
+
+
+## A shack: a 6 x 6 m room with a doorway and a vault window, and a barricade off one corner.
+func _shack(tile: Transform3D) -> void:
 	var h := 3.0
 	var w := WINDOW_W / 2.0
 	_wall_x(tile, -h, -w, -h)
@@ -167,18 +278,34 @@ func _window_house(tile: Transform3D) -> void:
 	_wall_x(tile, 1.1, h, h)
 	_wall_z(tile, -h - WALL_T / 2.0, h + WALL_T / 2.0, -h)
 	_wall_z(tile, -h - WALL_T / 2.0, h + WALL_T / 2.0, h)
+	_barricade(tile, h + 1.2, h)
 
 
-## Tile 3: a long wall with a window and a barricade, with short side walls to break line of sight.
+## A long wall with a window and a barricade, with short side walls to break line of sight.
 func _long_wall(tile: Transform3D) -> void:
 	var w := WINDOW_W / 2.0
-	_wall_x(tile, -6, -w, 0)
+	_wall_x(tile, -4.5, -w, 0)
 	_window(tile, 0, 0)
-	_wall_x(tile, w, 3, 0)
-	_barricade(tile, 4, 0)
-	_wall_x(tile, 5, 7, 0)
-	_wall_z(tile, 0, 3, -6)
-	_wall_z(tile, -3, 0, 7)
+	_wall_x(tile, w, 2, 0)
+	_barricade(tile, 3, 0)
+	_wall_x(tile, 4, 4.5, 0)
+	_wall_z(tile, WALL_T / 2.0, 2.5, -4.5)
+	_wall_z(tile, -2.5, -WALL_T / 2.0, 4.5)
+
+
+## A wall with a barricade in the middle. Loop around the ends or through the gap.
+func _barricade_loop(tile: Transform3D) -> void:
+	_wall_x(tile, -4.5, -1.0, 0)
+	_barricade(tile, 0, 0)
+	_wall_x(tile, 1.0, 4.5, 0)
+	_wall_z(tile, -2.5, -WALL_T / 2.0, -4.5)
+
+
+## Filler: a barricade between two rocks. Weak, but it can buy a few seconds between zones.
+func _rock_pallet(tile: Transform3D) -> void:
+	for x in [-2.1, 2.1]:
+		Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, 1.0, 0)), Vector3(2.2, 2.0, 1.6), ROCK_COLOR)
+	_barricade(tile, 0, 0)
 
 
 func _build_environment() -> void:

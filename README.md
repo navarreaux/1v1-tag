@@ -54,6 +54,8 @@ internet, the host has to forward **UDP port 7777** on their router for now (an 
 
 The chase copies Dead by Daylight's mechanics as closely as we can (not its art, names or perks).
 
+**The map** is 80 x 80 m, laid out like a Dead by Daylight map. Both players start at the **main building** in the middle (the Runner inside, the Hunter 20 m away). It has three windows, including a "god window" in its middle wall, and a barricade in its east door. Each corner has a **zone** of four tiles close together: T walls, L walls (with a window or a barricade), jungle gyms, shacks, long walls and barricade walls. Between the zones is sparse **filler**: rocks, trees and rock barricades.
+
 Both players can **slide along walls** at full speed: if you run into a wall at less than 45°, you keep your speed and glide along it instead of slowing down.
 
 **Runner**
@@ -87,7 +89,7 @@ All of these numbers live in `tuning.tres`. Double-click it in Godot's FileSyste
 | `scripts/game.gd` | Rounds, hits, barricades and who wins; the host decides these |
 | `scripts/player.gd` | Movement, cameras, swinging and vaulting |
 | `scripts/body_model.gd` | The low-poly people and their walk, run, crouch, vault and downed animations |
-| `scripts/arena.gd` | Builds the greybox map |
+| `scripts/arena.gd` | Builds the 80 x 80 m greybox map: main building, four tile zones, filler |
 | `scripts/barricade.gd` | One barricade (up, down, broken) |
 | `scripts/bot.gd` | The computer opponent |
 | `scripts/effects.gd` | Scratch marks, blood, noise alerts, heartbeat |
