@@ -1,0 +1,175 @@
+extends Node
+## A computer-controlled opponent for playing alone. Add it as a child of a player body.
+## As Hunter it chases, swings, and breaks barricades in its way.
+## As Runner it runs to the far side of nearby windows and barricades, drops barricades
+## on the Hunter, and vaults when its path goes through a window.
+
+const Role := preload("res://scripts/player.gd").Role
+const TUNING := preload("res://tuning.tres")
+const Barricade := preload("res://scripts/barricade.gd")
+
+const REPATH_TIME := 0.25
+const STUCK_TIME := 1.0
+
+var game: Node
+var body: CharacterBody3D
+
+var _agent: NavigationAgent3D
+var _repath := 0.0
+var _goal := Vector3.ZERO
+var _goal_time := 0.0
+var _stuck_timer := 0.0
+var _stuck_from := Vector3.ZERO
+var _think_delay := 0.0
+
+
+func _ready() -> void:
+	body = get_parent()
+	_agent = NavigationAgent3D.new()
+	_agent.path_desired_distance = 0.6
+	_agent.target_desired_distance = 0.6
+	_agent.radius = 0.4
+	body.add_child.call_deferred(_agent)
+
+
+func _physics_process(delta: float) -> void:
+	body.bot_input = Vector2.ZERO
+	if not game.is_chasing() or body.frozen or body.downed or not _agent.is_inside_tree():
+		_goal_time = 0.0
+		return
+	var foe = null
+	for p in game.players.values():
+		if p != body:
+			foe = p
+	if foe == null:
+		return
+	_think_delay -= delta
+	_repath -= delta
+	if body.role == Role.HUNTER:
+		_hunt(delta, foe)
+	else:
+		_flee(delta, foe)
+	_follow_path(delta)
+
+
+func _hunt(_delta: float, runner) -> void:
+	if runner.downed:
+		return
+	_set_goal(runner.global_position)
+	var to: Vector3 = runner.global_position - body.global_position
+	to.y = 0.0
+	# Close and in sight: turn to face the Runner and swing.
+	if to.length() < 3.5 and _can_see(runner):
+		body.yaw = atan2(-to.x, -to.z)
+		body.bot_input = Vector2(0, -1)
+		if to.length() < TUNING.hunter_attack_range * 0.9 and _think_delay <= 0.0:
+			_think_delay = 0.25  # a human-ish reaction time
+			body.try_attack()
+
+
+func _flee(delta: float, hunter) -> void:
+	var me: Vector3 = body.global_position
+	var threat: Vector3 = hunter.global_position
+	var dist := me.distance_to(threat)
+
+	# Drop a barricade on the Hunter when they are right behind us.
+	var it: Dictionary = game.find_interaction(body)
+	if it.get("kind") == "drop" and dist < 5.0 and _think_delay <= 0.0:
+		_think_delay = 0.3
+		game.do_interact(body)
+		_goal_time = 0.0
+		return
+
+	_goal_time -= delta
+	if _goal_time <= 0.0 or me.distance_to(_goal) < 1.0:
+		_goal_time = 1.5
+		_set_goal(_pick_flee_spot(me, threat))
+
+
+## Picks somewhere to run: far from the Hunter, not past them, preferably behind a wall.
+func _pick_flee_spot(me: Vector3, threat: Vector3) -> Vector3:
+	var best := me
+	var best_score := -INF
+	var away := me - threat
+	away.y = 0.0
+	away = away.normalized()
+	var threat_dist := me.distance_to(threat)
+	var space := body.get_world_3d().direct_space_state
+	# Running through a standing barricade lets us drop it behind us, so those spots get a bonus.
+	var bonus := {}
+	for b in game.arena.barricades:
+		if b.state == Barricade.State.UP and me.distance_to(b.global_position) < 8.0:
+			var far_side := 2.0 if b.to_local(threat).z < 0.0 else -2.0
+			bonus[b.to_global(Vector3(0, 0, far_side))] = 6.0
+	for spot: Vector3 in game.arena.loop_spots:
+		var dir := spot - me
+		dir.y = 0.0
+		var score := spot.distance_to(threat) - 0.5 * dir.length()
+		if dir.length() > 0.5 and dir.normalized().dot(away) < -0.2:
+			score -= 15.0  # would run toward the Hunter
+		if spot.distance_to(threat) < dir.length():
+			score -= 10.0  # the Hunter would get there first
+		if threat_dist < 10.0 and dir.length() < 3.0:
+			score -= 20.0  # the Hunter is coming; don't stand still
+		var q := PhysicsRayQueryParameters3D.create(threat + Vector3(0, 1.5, 0), spot + Vector3(0, 1.0, 0), 1)
+		if not space.intersect_ray(q).is_empty():
+			score += 6.0  # a wall between us and the Hunter
+		score += bonus.get(spot, 0.0) + randf() * 2.0
+		if score > best_score:
+			best_score = score
+			best = spot
+	return best
+
+
+func _set_goal(p: Vector3) -> void:
+	# Re-plan a few times a second, or right away if the goal jumped somewhere new.
+	if _repath <= 0.0 or p.distance_to(_goal) > 2.0:
+		_repath = REPATH_TIME
+		_agent.target_position = p
+	_goal = p
+
+
+func _follow_path(delta: float) -> void:
+	if body.busy > 0.0 or body.stun > 0.0:
+		return
+	var me := body.global_position
+	var next := _agent.get_next_path_position()
+	var dir := next - me
+	dir.y = 0.0
+	if body.bot_input == Vector2.ZERO and dir.length() > 0.05:
+		body.yaw = atan2(-dir.x, -dir.z)
+		body.bot_input = Vector2(0, -1)
+
+	# Vault or break when the path goes through a window or a dropped barricade.
+	var it: Dictionary = game.find_interaction(body)
+	match it.get("kind", ""):
+		"vault_window":
+			if _crosses(game.arena.windows[it.index], me, next, _goal):
+				game.do_interact(body)
+		"vault_barricade", "break":
+			var b = game.arena.barricades[it.index]
+			if _crosses(b.global_transform, me, next, _goal):
+				game.do_interact(body)
+
+	# If we haven't really moved in a while, try whatever is in reach, then pick a new spot.
+	_stuck_timer += delta
+	if _stuck_timer >= STUCK_TIME:
+		if me.distance_to(_stuck_from) < 0.4 and body.bot_input != Vector2.ZERO:
+			if not it.is_empty() and it.kind != "drop":
+				game.do_interact(body)
+			_goal_time = 0.0
+		_stuck_timer = 0.0
+		_stuck_from = me
+
+
+## True if going from `a` toward `b` or `goal` means passing through the opening at `xf`.
+func _crosses(xf: Transform3D, a: Vector3, b: Vector3, goal: Vector3) -> bool:
+	var n := xf.basis.z
+	var side_a := (a - xf.origin).dot(n)
+	return side_a * (b - xf.origin).dot(n) < 0.0 or side_a * (goal - xf.origin).dot(n) < 0.0
+
+
+func _can_see(target: Node3D) -> bool:
+	var from := body.global_position + Vector3(0, 1.5, 0)
+	var q := PhysicsRayQueryParameters3D.create(from, target.global_position + Vector3(0, 1.0, 0), 1)
+	return body.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
