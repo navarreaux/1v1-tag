@@ -1,12 +1,23 @@
 extends Node3D
-## The map: a sunny subway yard laid out like Dead by Daylight's Rotten Fields. It's a grid of
+## The maps, built in code. Set `map_id` before adding the arena to the tree.
+##
+## Rotten Fields (map 0): a sunny subway yard laid out like Dead by Daylight's Rotten Fields. A grid of
 ## 24 m cells inside a stepped outer wall (144 x 192 m at its widest). Cells around the edge, at
 ## clock positions, hold tiles: wall pairs, T walls, a bent wall, the one long wall, and big train
 ## loops at 1, 7 and 10 o'clock. A shack sits in the very middle with a tile above and below it;
 ## the rest is sparse filler (shipping containers, lamp posts, container barricades).
 ## A very strong Runner building (the depot) sits in the top-left corner; both players start there.
 ## Every barricade stands in a gap between two solid things, so it can always be looped.
+##
+## The Last Stop (map 1): a compact 80 x 80 m abandoned roadside service station. A 5 x 5 grid of
+## 16 m cells (plus one sticking out on the right) around a fixed 32 x 32 m service station: long
+## walls at B and V, short walls at D, N and T, a shack at F, a trash can loop at R, and filler,
+## scrap piles, drainage curbs and open lanes in the rest. The Runner starts inside the station.
+##
 ## Every player builds the same map from this code, so nothing about it is sent over the network.
+
+enum Map { ROTTEN_FIELDS, LAST_STOP }
+const MAP_NAMES := ["Rotten Fields", "The Last Stop"]
 
 const Greybox := preload("res://scripts/greybox.gd")
 const Barricade := preload("res://scripts/barricade.gd")
@@ -35,13 +46,9 @@ const SLEEPER_COLOR := Color(0.38, 0.27, 0.18)
 const PAINT := [Color(1.0, 0.25, 0.6), Color(0.1, 0.85, 0.95), Color(0.5, 0.95, 0.2), Color(1.0, 0.85, 0.1),
 	Color(0.6, 0.3, 1.0), Color(1.0, 0.5, 0.1), Color(0.2, 0.45, 1.0)]
 
-## Both players start at the depot in the top-left corner: the Runner inside, the Hunter
-## about 22 m away facing it. (The Hunter also waits out the Runner's head start.)
+## Rotten Fields: both players start at the depot in the top-left corner: the Runner inside, the
+## Hunter about 22 m away facing it. (The Hunter also waits out the Runner's head start.)
 const DEPOT := Vector3(-24, 0, -72)
-const RUNNER_SPAWN := Vector3(-16.75, 0, -72)
-const RUNNER_SPAWN_YAW := PI  # facing along the corridor
-const HUNTER_SPAWN := Vector3(-8, 0, -52)
-const HUNTER_SPAWN_YAW := 0.675  # facing the depot
 
 enum Tile { T_WALL, L_WINDOW, L_BARRICADE, JUNGLE_GYM, SHACK, LONG_WALL, BARRICADE_LOOP, BENT_WALL,
 	L_PAIR, TRAIN_LOOP }
@@ -67,6 +74,19 @@ const ROCKS := [[-21, -45], [27, -21], [-26, 3], [22, 5], [-20, 27], [26, 45], [
 	[-64, -32], [64, 16], [64, -36], [-64, 32], [36, 86], [-40, -86], [-36, 62], [14, -86]]
 const LAMPS := [[0, -46], [50, 26], [24, 72], [-44, -28], [18, 10], [-28, -50], [-12, -12], [12, 12],
 	[-12, 12], [12, -12], [-46, 46], [30, -64], [-64, 0], [64, 0], [10, 88], [-10, -88]]
+
+## The Last Stop.
+const LS_OUTLINE := [Vector2(-40, -40), Vector2(40, -40), Vector2(40, -8), Vector2(56, -8), Vector2(56, 8),
+	Vector2(40, 8), Vector2(40, 40), Vector2(-40, 40)]
+## The service station's middle: it fills cells C, D, H (2 x 2 cells).
+const LS_STATION := Vector3(8, 0, -8)
+
+## Which map to build, and where each player starts on it.
+var map_id := Map.ROTTEN_FIELDS
+var runner_spawn := Vector3(-16.75, 0, -72)
+var runner_spawn_yaw := PI  # facing along the corridor
+var hunter_spawn := Vector3(-8, 0, -52)
+var hunter_spawn_yaw := 0.675  # facing the depot
 
 ## Barricade nodes, in a fixed order so peers can refer to them by index.
 var barricades: Array = []
@@ -96,16 +116,15 @@ func _ready() -> void:
 	_rng.seed = 1234
 	_nav = NavigationRegion3D.new()
 	add_child(_nav)
-	Greybox.box(_nav, Transform3D(Basis(), Vector3(0, -0.5, 0)), Vector3(148, 1, 196), FLOOR_COLOR)
-	for i in OUTLINE.size():
-		var a: Vector2 = OUTLINE[i]
-		var b: Vector2 = OUTLINE[(i + 1) % OUTLINE.size()]
-		var along := (b - a).normalized()
-		var out := Vector2(along.y, -along.x)  # outward, since the outline runs clockwise
-		var mid := (a + b) / 2.0 + out * 0.5
-		var xf := Transform3D(Basis(Vector3.UP, -along.angle()), Vector3(mid.x, 1.5, mid.y))
-		Greybox.box(_nav, xf, Vector3(a.distance_to(b) + 1.0, 3, 1), WALL_COLOR)
+	if map_id == Map.LAST_STOP:
+		_build_last_stop()
+	else:
+		_build_rotten_fields()
+	_bake_navigation()
 
+
+func _build_rotten_fields() -> void:
+	_outline(OUTLINE, Vector3(0, 0, 0), Vector2(148, 196))
 	_depot(_at(DEPOT.x, DEPOT.z, 0))
 	for t in TILES:
 		_tile(t[0], _at(t[1], t[2], t[3]))
@@ -115,7 +134,122 @@ func _ready() -> void:
 		_rock(Vector3(r[0], 0, r[1]))
 	for l in LAMPS:
 		_lamp(Vector3(l[0], 0, l[1]))
-	_bake_navigation()
+
+
+## The floor (a `floor_size` rectangle centered on `center`) and a solid wall around `outline`.
+func _outline(outline: Array, center: Vector3, floor_size: Vector2) -> void:
+	Greybox.box(_nav, Transform3D(Basis(), center + Vector3(0, -0.5, 0)), Vector3(floor_size.x, 1, floor_size.y), FLOOR_COLOR)
+	for i in outline.size():
+		var a: Vector2 = outline[i]
+		var b: Vector2 = outline[(i + 1) % outline.size()]
+		var along := (b - a).normalized()
+		var out := Vector2(along.y, -along.x)  # outward, since the outline runs clockwise
+		var mid := (a + b) / 2.0 + out * 0.5
+		var xf := Transform3D(Basis(Vector3.UP, -along.angle()), Vector3(mid.x, 1.5, mid.y))
+		Greybox.box(_nav, xf, Vector3(a.distance_to(b) + 1.0, 3, 1), WALL_COLOR)
+
+
+# --- The Last Stop ---------------------------------------------------------
+
+## The middle of a cell: columns A..E are 0..4 left to right (5 is the extra cell M sticks out
+## into), rows are 0..4 top to bottom.
+func _cell(col: int, row: int, degrees := 0.0) -> Transform3D:
+	return _at(-32.0 + col * 16.0, -32.0 + row * 16.0, degrees)
+
+
+func _build_last_stop() -> void:
+	_outline(LS_OUTLINE, Vector3(8, 0, 0), Vector2(98, 82))
+	runner_spawn = LS_STATION + Vector3(-10, 0, 6)
+	runner_spawn_yaw = PI / 2.0
+	hunter_spawn = Vector3(-32, 0, 0)  # J, an open lane
+	hunter_spawn_yaw = -PI / 2.0  # facing the station
+	_service_station(_at(LS_STATION.x, LS_STATION.z, 0))
+	# Strong loops on opposite edges, medium ones spread out, one shack, one loop tile.
+	_long_wall(_cell(1, 0, 0))  # B
+	_long_wall(_cell(3, 4, 180))  # V
+	_short_wall(_cell(3, 0, 0))  # D
+	_short_wall(_cell(0, 3, 90))  # N
+	_short_wall(_cell(1, 4, 180))  # T
+	_shack(_cell(0, 1, 90))  # F
+	_rock_pallet(_cell(4, 3, 30))  # R: a loop with an unsafe trash can
+	# Filler: a weak trash can between two short containers, plus a container for cover.
+	for f in [[1, 1, 60], [4, 1, -30], [1, 3, -60], [3, 3, 20]]:  # G, I, O, Q
+		var cell := _cell(f[0], f[1], f[2])
+		_rock_pallet(cell * Transform3D(Basis(), Vector3(0, 0, -2.5)))
+		_container(cell * Transform3D(Basis(Vector3.UP, 0.3), Vector3(1.5, 0, 3.5)), 4.0)
+	# Scrap yards: piles of containers that break sight lines (no trash cans).
+	for c in [[2, 0, 15], [1, 2, -20], [4, 2, 75], [2, 3, 40]]:  # C, K, L, P
+		_scrap_yard(_cell(c[0], c[1], c[2]))
+	# Drainage in the corners: low curbs you run around (they don't block sight).
+	for d in [[0, 0, 45], [4, 0, -45], [0, 4, -45], [4, 4, 45]]:  # A, E, S, W
+		_drainage(_cell(d[0], d[1], d[2]))
+	# Dead space (J, M, U) stays open: clear escape lanes, just a lamp each.
+	for l in [[-32, 6], [48, 0], [6, 32], [-16, -16], [24, 16], [-24, 24]]:
+		_lamp(Vector3(l[0], 0, l[1]))
+
+
+## The service station (32 x 32 m): a fenced forecourt with entrances west and south, a pump
+## island under a canopy in the middle, and a shop in the north-east corner with a trash can
+## between it and the fence. One window in the east fence is the only vault.
+func _service_station(tile: Transform3D) -> void:
+	var h := 15.0
+	var w := WINDOW_W / 2.0
+	var e := WALL_T / 2.0
+	# Fence: north and east solid (window in the east), west and south with 6 m entrances.
+	_wall_x(tile, -h - e, h + e, -h)
+	_wall_z(tile, -h + e, 4 - w, h)
+	_window_z(tile, 4, h)
+	_wall_z(tile, 4 + w, h - e, h)
+	_wall_z(tile, -h + e, -3, -h)
+	_wall_z(tile, 3, h - e, -h)
+	_wall_x(tile, -h - e, -3, h)
+	_wall_x(tile, 3, h + e, h)
+	# The shop, with a trash can in the 2 m gap between it and the east fence.
+	_wall_color = MAIN_COLOR
+	var shop := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(8.5, 1.6, -10)), Vector3(9, 3.2, 7), MAIN_COLOR)
+	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 1.9, 0)), Vector3(9.4, 0.4, 7.4), MAIN_COLOR.darkened(0.3), false)
+	Greybox.box(shop, Transform3D(Basis(), Vector3(-1, 0.2, 3.52)), Vector3(4, 1.2, 0.05), WINDOW_COLOR, false)
+	Greybox.box(shop, Transform3D(Basis(), Vector3(0, 2.4, 3.5)), Vector3(5, 0.7, 0.2), PAINT[3], false)
+	_wall_color = WALL_COLOR
+	_barricade(tile, 14, -10, 90)
+	# Pump island: low and solid (you can see over it), with pumps on top, under a canopy.
+	Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 0.5, 2)), Vector3(10, 1.0, 2.4), Color(0.75, 0.75, 0.72))
+	for x in [-3.0, 3.0]:
+		var pump := Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(x, 1.8, 2)), Vector3(0.9, 1.6, 0.6), Color(0.9, 0.2, 0.2))
+		Greybox.box(pump, Transform3D(Basis(), Vector3(0, 0.3, 0.31)), Vector3(0.6, 0.4, 0.02), Color(0.15, 0.2, 0.3), false)
+	for p in [Vector3(-7, 0, -2), Vector3(7, 0, -2), Vector3(-7, 0, 6), Vector3(7, 0, 6)]:
+		Greybox.box(_nav, tile * Transform3D(Basis(), p + Vector3(0, 2.4, 0)), Vector3(0.5, 4.8, 0.5), POLE_COLOR)
+	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 5.0, 2)), Vector3(17, 0.5, 11), Color(0.95, 0.95, 0.95), false)
+	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 5.0, 2)), Vector3(17.1, 0.25, 11.1), PAINT[0], false)
+
+
+## A medium loop: a 6 m wall with a window, a trash can gap, then a short post, with a short
+## return at the far end to break sight.
+func _short_wall(tile: Transform3D) -> void:
+	var w := WINDOW_W / 2.0
+	_wall_x(tile, -5, -2 - w, 0)
+	_window(tile, -2, 0)
+	_wall_x(tile, -2 + w, 1, 0)
+	_barricade(tile, 2, 0)
+	_wall_x(tile, 3, 4.5, 0)
+	_wall_z(tile, WALL_T / 2.0, 2.5, -5)
+
+
+## A scrap yard: a jumble of containers that blocks sight lines. No trash cans.
+func _scrap_yard(tile: Transform3D) -> void:
+	_container(tile * Transform3D(Basis(Vector3.UP, 0.2), Vector3(-2.5, 0, -2)), 5.0)
+	_container(tile * Transform3D(Basis(Vector3.UP, 1.4), Vector3(3, 0, 1)), 4.0)
+	_container(tile * Transform3D(Basis(Vector3.UP, -0.5), Vector3(-1.5, 0, 3.5)), 3.0)
+
+
+## Drainage: two low concrete curbs along a dry channel. Low cover: you see over them but run around.
+func _drainage(tile: Transform3D) -> void:
+	for z in [-1.6, 1.6]:
+		Greybox.box(_nav, tile * Transform3D(Basis(), Vector3(0, 0.3, z)), Vector3(9, 0.6, 0.6), WALL_COLOR.darkened(0.15))
+	Greybox.box(self, tile * Transform3D(Basis(), Vector3(0, 0.02, 0)), Vector3(9, 0.04, 2.6), Color(0.3, 0.33, 0.36), false)
+
+
+# --- Rotten Fields tiles (also used by The Last Stop) -----------------------
 
 
 func _bake_navigation() -> void:
