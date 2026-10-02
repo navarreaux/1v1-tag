@@ -54,6 +54,9 @@ var effects: Node3D
 
 var _players_root: Node3D
 var _last_hit_ms := -HIT_GRACE_MS
+## Game time in milliseconds, for the hit grace. (Not the wall clock, so it also works when the
+## game runs faster or slower than real time, like in automated tests.)
+var _time_ms := 0.0
 var _clock_send := 0.0
 
 
@@ -133,6 +136,7 @@ func _on_connection_failed() -> void:
 # --- Every frame ---------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_time_ms += delta * 1000.0
 	var host := multiplayer.is_server()
 	match phase:
 		Phase.COUNTDOWN:
@@ -353,7 +357,7 @@ func request_hit() -> void:
 	# Allow a little extra range for network delay.
 	if hunter.global_position.distance_to(runner.global_position) > TUNING.hunter_attack_range + 1.5:
 		return
-	var now := Time.get_ticks_msec()
+	var now := int(_time_ms)
 	if now - _last_hit_ms < HIT_GRACE_MS:
 		return
 	_last_hit_ms = now
