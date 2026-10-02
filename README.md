@@ -22,8 +22,9 @@ Under **Play alone against a bot**, click **I'm the Runner** or **I'm the Hunter
 plays the other side. Each round shows your time; press **Enter** to play another round
 (you keep the same role) or **Esc** for the menu.
 
-- The bot Hunter chases you, swings when close and vaults windows. At a knocked-over trash can it works out whether kicking it away or running around is quicker, and does that.
-- The bot Runner loops windows and trash cans, fast vaults, and knocks trash cans over on you.
+- The bot Hunter closes the distance, then swings. When nothing is in the way it runs straight at you, aiming a little ahead of where you're going; otherwise it follows the shortest path and vaults windows. At a knocked-over trash can it works out whether kicking it away or running around is quicker, and does that.
+- The bot Runner tries to keep as far from you as it can. A few times a second it compares places it could run to by how far behind you'd be once it got there (counting your vaults and kicks), stays away from paths you could cut off, uses windows and trash cans, and knocks trash cans over on you. It won't vault the same window straight back.
+- Both bots steer around corners and sidestep when they stop making progress, so they don't get stuck on walls.
 
 ### Play both sides on one PC
 1. In Godot's top menu choose **Debug → Customize Run Instances...**
